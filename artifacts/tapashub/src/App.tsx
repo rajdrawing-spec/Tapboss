@@ -145,8 +145,12 @@ const clerkAppearance = {
     cardBox: "bg-card border border-border rounded-2xl w-[420px] max-w-full overflow-hidden shadow-2xl",
     card: "!shadow-none !border-0 !bg-transparent !rounded-none",
     footer: "!shadow-none !border-0 !bg-transparent !rounded-none",
-    headerTitle: "text-foreground text-xl font-bold",
-    headerSubtitle: "text-muted-foreground",
+    // The page already renders its own TapasHub branding above the card, so
+    // hide Clerk's built-in logo + "Sign in to …" header to avoid duplication.
+    logoBox: "!hidden",
+    header: "!hidden",
+    headerTitle: "!hidden",
+    headerSubtitle: "!hidden",
     socialButtonsBlockButton: "border border-border bg-background hover:bg-muted transition-colors",
     socialButtonsBlockButtonText: "text-foreground font-medium",
     formFieldLabel: "text-foreground",
