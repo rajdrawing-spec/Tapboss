@@ -28,6 +28,8 @@ const H = vi.hoisted(() => {
     client_visibility_settings: [],
     client_ai_plans: [],
     client_audit_logs: [],
+    campaign_daily_metrics: [],
+    marketing_reports: [],
   };
   function reset() {
     for (const k of Object.keys(store)) store[k] = [];
@@ -50,6 +52,8 @@ const H = vi.hoisted(() => {
   const clientVisibilitySettingsTable = makeTable("client_visibility_settings");
   const clientAiPlansTable = makeTable("client_ai_plans");
   const clientAuditLogsTable = makeTable("client_audit_logs");
+  const campaignDailyMetricsTable = makeTable("campaign_daily_metrics");
+  const marketingReportsTable = makeTable("marketing_reports");
 
   const field = (col: string) => String(col).split(".")[1];
   function match(row: Row, cond: any): boolean {
@@ -132,7 +136,7 @@ const H = vi.hoisted(() => {
   };
   // Holder for the "signed-in" user seen by the mocked Clerk/auth boundary.
   const authState = { user: null as any };
-  return { store, reset, db, authState, marketingProjectsTable, marketingProjectMembersTable, campaignsTable, campaignCreativesTable, campaignLeadsTable, ordersTable, clientVisibilitySettingsTable, clientAiPlansTable, clientAuditLogsTable };
+  return { store, reset, db, authState, marketingProjectsTable, marketingProjectMembersTable, campaignsTable, campaignCreativesTable, campaignLeadsTable, ordersTable, clientVisibilitySettingsTable, clientAiPlansTable, clientAuditLogsTable, campaignDailyMetricsTable, marketingReportsTable };
 });
 
 vi.mock("@workspace/db", () => {
@@ -155,6 +159,8 @@ vi.mock("@workspace/db", () => {
   clientVisibilitySettingsTable: H.clientVisibilitySettingsTable,
   clientAiPlansTable: H.clientAiPlansTable,
   clientAuditLogsTable: H.clientAuditLogsTable,
+  campaignDailyMetricsTable: H.campaignDailyMetricsTable,
+  marketingReportsTable: H.marketingReportsTable,
   DEFAULT_CLIENT_VISIBILITY: {
     revenue: true, orders: true, adSpend: true, roas: true, leads: true,
     cpa: true, conversion: true, campaigns: true, creatives: true,

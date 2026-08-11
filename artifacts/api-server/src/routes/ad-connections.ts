@@ -1,0 +1,142 @@
+import { Router } from "express";
+import {
+  db, adConnectionsTable, adAccountsTable, syncJobsTable, syncLogsTable,
+} from "@workspace/db";
+import { eq, and, desc } from "drizzle-orm";
+import { z } from "zod/v4";
+import { requireSuperAdmin } from "../middleware/authz";
+import { canAccessCompany } from "../lib/company-scope";
+import {
+  encryptCredentials, metaListAdAccounts, runSyncForConnection,
+} from "../lib/ad-sync";
+
+/**
+ * Ad-platform connections (Meta / Google Ads / GA4) — super-admin only.
+ * Tokens are encrypted at rest and NEVER returned to the frontend.
+ */
+const router = Router();
+
+router.use("/ad-connections", requireSuperAdmin);
+
+const publicConnection = (c: typeof adConnectionsTable.$inferSelect) => ({
+  id: c.id, companyId: c.companyId, platform: c.platform, status: c.status,
+  accountLabel: c.accountLabel, lastSyncedAt: c.lastSyncedAt, lastError: c.lastError,
+  createdAt: c.createdAt,
+});
+
+router.get("/ad-connections", async (req, res) => {
+  try {
+    const rows = await db.select().from(adConnectionsTable).orderBy(desc(adConnectionsTable.createdAt));
+    const accounts = await db.select().from(adAccountsTable);
+    res.json(rows.map((c) => ({
+      ...publicConnection(c),
+      accounts: accounts.filter((a) => a.connectionId === c.id).map((a) => ({
+        id: a.id, externalId: a.externalId, name: a.name, currency: a.currency, syncEnabled: a.syncEnabled,
+      })),
+    })));
+  } catch (e) { req.log.error(e); res.status(500).json({ error: "Failed to list connections" }); }
+});
+
+const connectMetaSchema = z.object({
+  companyId: z.number().int(),
+  accessToken: z.string().min(20),
+  accountLabel: z.string().max(200).optional(),
+});
+
+/**
+ * Connect Meta via a (long-lived) system-user or user access token from the
+ * user's own Meta app. The token is validated by listing its ad accounts
+ * before anything is stored.
+ */
+router.post("/ad-connections/meta", async (req, res) => {
+  try {
+    const parsed = connectMetaSchema.safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({ error: "Invalid input" }); return; }
+    if (!canAccessCompany(req, parsed.data.companyId)) { res.status(403).json({ error: "Forbidden" }); return; }
+    let accounts;
+    try {
+      accounts = await metaListAdAccounts(parsed.data.accessToken);
+    } catch (e: any) {
+      res.status(400).json({ error: `Meta rejected the token: ${e.message}` }); return;
+    }
+    if (accounts.length === 0) {
+      res.status(400).json({ error: "This token has no ad accounts. Use a token with ads_read permission." }); return;
+    }
+    const user = (req as any).localUser;
+    const [conn] = await db.insert(adConnectionsTable).values({
+      companyId: parsed.data.companyId,
+      platform: "meta",
+      status: "connected",
+      accountLabel: parsed.data.accountLabel ?? null,
+      credentialsEnc: encryptCredentials({ accessToken: parsed.data.accessToken }),
+      scopes: "ads_read",
+      connectedByUserId: user?.id ?? null,
+    }).returning();
+    for (const a of accounts) {
+      await db.insert(adAccountsTable).values({
+        connectionId: conn.id, companyId: parsed.data.companyId, platform: "meta",
+        externalId: a.externalId, name: a.name, currency: a.currency,
+      }).onConflictDoNothing();
+    }
+    res.status(201).json(publicConnection(conn));
+  } catch (e) { req.log.error(e); res.status(500).json({ error: "Failed to connect Meta" }); }
+});
+
+router.patch("/ad-connections/:id/accounts/:accountId", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const accountId = parseInt(req.params.accountId);
+    const syncEnabled = Boolean((req.body ?? {}).syncEnabled);
+    const [row] = await db.update(adAccountsTable).set({ syncEnabled, updatedAt: new Date() })
+      .where(and(eq(adAccountsTable.id, accountId), eq(adAccountsTable.connectionId, id))).returning();
+    if (!row) { res.status(404).json({ error: "Not found" }); return; }
+    res.json({ id: row.id, syncEnabled: row.syncEnabled });
+  } catch (e) { req.log.error(e); res.status(500).json({ error: "Failed to update account" }); }
+});
+
+router.delete("/ad-connections/:id", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const [row] = await db.delete(adConnectionsTable).where(eq(adConnectionsTable.id, id)).returning();
+    if (!row) { res.status(404).json({ error: "Not found" }); return; }
+    await db.delete(adAccountsTable).where(eq(adAccountsTable.connectionId, id));
+    res.json({ ok: true });
+  } catch (e) { req.log.error(e); res.status(500).json({ error: "Failed to disconnect" }); }
+});
+
+/** Sync Now. */
+router.post("/ad-connections/:id/sync", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const result = await runSyncForConnection(id, "manual");
+    res.json(result);
+  } catch (e: any) {
+    req.log.error(e);
+    res.status(502).json({ error: e.message || "Sync failed" });
+  }
+});
+
+router.get("/ad-connections/:id/jobs", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const jobs = await db.select().from(syncJobsTable)
+      .where(eq(syncJobsTable.connectionId, id))
+      .orderBy(desc(syncJobsTable.startedAt)).limit(20);
+    res.json(jobs);
+  } catch (e) { req.log.error(e); res.status(500).json({ error: "Failed to list sync jobs" }); }
+});
+
+router.get("/ad-connections/:id/jobs/:jobId/logs", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const jobId = parseInt(req.params.jobId);
+    const [job] = await db.select().from(syncJobsTable)
+      .where(and(eq(syncJobsTable.id, jobId), eq(syncJobsTable.connectionId, id)));
+    if (!job) { res.status(404).json({ error: "Job not found" }); return; }
+    const logs = await db.select().from(syncLogsTable)
+      .where(eq(syncLogsTable.jobId, jobId)).orderBy(desc(syncLogsTable.createdAt)).limit(200);
+    res.json(logs);
+  } catch (e) { req.log.error(e); res.status(500).json({ error: "Failed to list sync logs" }); }
+});
+
+export default router;

@@ -783,6 +783,115 @@ export async function applyMigrations(): Promise<void> {
     await db.execute(sql`CREATE INDEX IF NOT EXISTS client_audit_project_idx ON client_audit_logs(project_id)`);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS client_audit_created_idx ON client_audit_logs(created_at)`);
 
+    // ── Ad-platform integration layer (Meta / Google Ads / GA4) ─────────────
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS ad_connections (
+        id                    SERIAL PRIMARY KEY,
+        company_id            INTEGER NOT NULL,
+        platform              TEXT    NOT NULL,
+        status                TEXT    NOT NULL DEFAULT 'connected',
+        account_label         TEXT,
+        credentials_enc       TEXT    NOT NULL,
+        scopes                TEXT,
+        last_synced_at        TIMESTAMP,
+        last_error            TEXT,
+        connected_by_user_id  INTEGER,
+        created_at            TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at            TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS ad_connections_company_idx ON ad_connections(company_id)`);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS ad_accounts (
+        id            SERIAL PRIMARY KEY,
+        connection_id INTEGER NOT NULL,
+        company_id    INTEGER NOT NULL,
+        platform      TEXT    NOT NULL,
+        external_id   TEXT    NOT NULL,
+        name          TEXT,
+        currency      TEXT,
+        status        TEXT    NOT NULL DEFAULT 'active',
+        sync_enabled  BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at    TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at    TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS ad_accounts_conn_ext_uniq ON ad_accounts(connection_id, external_id)`);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS campaign_daily_metrics (
+        id           SERIAL PRIMARY KEY,
+        company_id   INTEGER NOT NULL,
+        campaign_id  INTEGER NOT NULL,
+        date         TEXT    NOT NULL,
+        source       TEXT    NOT NULL DEFAULT 'manual',
+        spend        REAL    NOT NULL DEFAULT 0,
+        revenue      REAL    NOT NULL DEFAULT 0,
+        impressions  INTEGER NOT NULL DEFAULT 0,
+        reach        INTEGER NOT NULL DEFAULT 0,
+        clicks       INTEGER NOT NULL DEFAULT 0,
+        leads        INTEGER NOT NULL DEFAULT 0,
+        conversions  INTEGER NOT NULL DEFAULT 0,
+        created_at   TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at   TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS campaign_daily_metrics_uniq ON campaign_daily_metrics(campaign_id, date, source)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS campaign_daily_metrics_company_date_idx ON campaign_daily_metrics(company_id, date)`);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS sync_jobs (
+        id            SERIAL PRIMARY KEY,
+        connection_id INTEGER NOT NULL,
+        company_id    INTEGER NOT NULL,
+        platform      TEXT    NOT NULL,
+        trigger       TEXT    NOT NULL DEFAULT 'scheduled',
+        status        TEXT    NOT NULL DEFAULT 'running',
+        started_at    TIMESTAMP NOT NULL DEFAULT NOW(),
+        finished_at   TIMESTAMP,
+        rows_upserted INTEGER NOT NULL DEFAULT 0,
+        error         TEXT
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS sync_jobs_connection_idx ON sync_jobs(connection_id, started_at)`);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS sync_logs (
+        id         SERIAL PRIMARY KEY,
+        job_id     INTEGER NOT NULL,
+        level      TEXT    NOT NULL DEFAULT 'info',
+        message    TEXT    NOT NULL,
+        detail     JSONB,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS sync_logs_job_idx ON sync_logs(job_id)`);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS marketing_reports (
+        id                    SERIAL PRIMARY KEY,
+        project_id            INTEGER NOT NULL,
+        company_id            INTEGER NOT NULL,
+        type                  TEXT    NOT NULL DEFAULT 'custom',
+        title                 TEXT    NOT NULL,
+        period_from           TEXT    NOT NULL,
+        period_to             TEXT    NOT NULL,
+        status                TEXT    NOT NULL DEFAULT 'draft',
+        payload               JSONB,
+        pdf_path              TEXT,
+        generated_by_user_id  INTEGER,
+        approved_by_user_id   INTEGER,
+        approved_at           TIMESTAMP,
+        created_at            TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at            TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS marketing_reports_project_idx ON marketing_reports(project_id, status)`);
+    await db.execute(sql`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS external_id TEXT`);
+    await db.execute(sql`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS ad_account_id INTEGER`);
+    await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS campaigns_company_external_uniq ON campaigns(company_id, external_id) WHERE external_id IS NOT NULL`);
+
     logger.info("Startup migrations applied (schema)");
   } catch (e) {
     // Log but never crash the server — missing tables are better discovered

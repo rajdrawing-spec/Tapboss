@@ -132,7 +132,7 @@ interface Overview {
   kpis: { revenue?: number; orders?: number; leads?: number; conversionRate?: number | null; aov?: number }
   campaignLifetime: { adSpend?: number; roas?: number | null; cpl?: number | null; cpa?: number | null }
   comparison: { revenue?: number | null; orders?: number | null; leads?: number | null }
-  timeseries: { period: string; revenue?: number; orders?: number; leads?: number }[]
+  timeseries: { period: string; revenue?: number; orders?: number; leads?: number; spend?: number; roas?: number | null; conversions?: number }[]
 }
 
 export function OverviewSection({ projectId }: { projectId: number }) {
@@ -165,6 +165,9 @@ export function OverviewSection({ projectId }: { projectId: number }) {
   const hasRevenue = data.timeseries.some((t) => t.revenue !== undefined) || k.revenue !== undefined
   const hasOrders = k.orders !== undefined
   const hasLeads = k.leads !== undefined
+  const hasSpend = data.timeseries.some((t) => t.spend !== undefined)
+  const hasRoas = data.timeseries.some((t) => t.roas !== undefined)
+  const hasConversions = data.timeseries.some((t) => t.conversions !== undefined)
 
   return (
     <div className="space-y-6">
@@ -208,23 +211,49 @@ export function OverviewSection({ projectId }: { projectId: number }) {
                 <Tooltip formatter={(v: number, name: string) => name === "revenue" ? fmtINR(v) : fmtNum(v)} />
                 <Legend />
                 {hasRevenue && <Bar yAxisId="rev" dataKey="revenue" name="Revenue" fill="#22c55e" radius={[3, 3, 0, 0]} />}
+                {hasSpend && <Bar yAxisId="rev" dataKey="spend" name="Ad Spend" fill="#f59e0b" radius={[3, 3, 0, 0]} />}
                 {hasOrders && <Line yAxisId="count" dataKey="orders" name="Orders" stroke="#3b82f6" strokeWidth={2} dot={false} />}
                 {hasLeads && <Line yAxisId="count" dataKey="leads" name="Leads" stroke="#a855f7" strokeWidth={2} dot={false} />}
+                {hasConversions && <Line yAxisId="count" dataKey="conversions" name="Conversions" stroke="#ec4899" strokeWidth={2} dot={false} />}
               </ComposedChart>
             </ResponsiveContainer>
           </div>
         )}
+        {hasSpend && (
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            Ad spend{hasConversions ? " and conversions come" : " comes"} from daily platform data synced from your ad accounts.
+          </p>
+        )}
       </div>
+
+      {hasRoas && (
+        <div className="rounded-lg border p-4">
+          <h3 className="mb-4 font-semibold">Return on ad spend (ROAS)</h3>
+          <div className="h-56">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={data.timeseries}>
+                <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
+                <XAxis dataKey="period" fontSize={11} />
+                <YAxis fontSize={11} tickFormatter={(v: number) => `${v.toFixed(1)}x`} />
+                <Tooltip formatter={(v: number) => v != null ? `${Number(v).toFixed(2)}x` : "—"} />
+                <Line dataKey="roas" name="ROAS" stroke="#14b8a6" strokeWidth={2} dot={false} connectNulls />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
 /* ------------------------------ campaigns ------------------------------ */
 
+// Financial fields are OPTIONAL — the server strips any metric the super
+// admin has hidden for this project, so columns render only when present.
 interface ClientCampaign {
   id: number; name: string; channel: string; status: string
-  spend: number; impressions: number; clicks: number; ctr: number | null
-  leads: number; conversions: number; revenue: number; roas: number | null
+  spend?: number; impressions: number; clicks: number; ctr: number | null
+  leads: number; conversions: number; revenue?: number; roas?: number | null
 }
 
 export function CampaignsSection({ projectId }: { projectId: number }) {
@@ -238,6 +267,10 @@ export function CampaignsSection({ projectId }: { projectId: number }) {
   if (isError || !data) return <ErrorState />
   if (data.campaigns.length === 0 && page === 1) return <Empty text="No campaigns have been shared with you yet." />
 
+  const hasSpend = data.campaigns.some((c) => c.spend !== undefined)
+  const hasRevenue = data.campaigns.some((c) => c.revenue !== undefined)
+  const hasRoas = data.campaigns.some((c) => c.roas !== undefined)
+
   return (
     <div className="rounded-lg border p-4">
       <p className="mb-3 text-xs text-muted-foreground">Campaign performance shows lifetime totals since launch.</p>
@@ -247,14 +280,14 @@ export function CampaignsSection({ projectId }: { projectId: number }) {
             <tr className="border-b text-left text-xs text-muted-foreground">
               <th className="py-2 pr-4 font-medium">Campaign</th>
               <th className="px-3 py-2 font-medium">Status</th>
-              <th className="px-3 py-2 text-right font-medium">Spend</th>
+              {hasSpend && <th className="px-3 py-2 text-right font-medium">Spend</th>}
               <th className="px-3 py-2 text-right font-medium">Impressions</th>
               <th className="px-3 py-2 text-right font-medium">Clicks</th>
               <th className="px-3 py-2 text-right font-medium">CTR</th>
               <th className="px-3 py-2 text-right font-medium">Leads</th>
               <th className="px-3 py-2 text-right font-medium">Conv.</th>
-              <th className="px-3 py-2 text-right font-medium">Revenue</th>
-              <th className="py-2 pl-3 text-right font-medium">ROAS</th>
+              {hasRevenue && <th className="px-3 py-2 text-right font-medium">Revenue</th>}
+              {hasRoas && <th className="py-2 pl-3 text-right font-medium">ROAS</th>}
             </tr>
           </thead>
           <tbody>
@@ -265,16 +298,18 @@ export function CampaignsSection({ projectId }: { projectId: number }) {
                   <div className="text-xs uppercase text-muted-foreground">{c.channel}</div>
                 </td>
                 <td className="px-3 py-2"><span className="rounded-full bg-muted px-2 py-0.5 text-xs capitalize">{c.status}</span></td>
-                <td className="px-3 py-2 text-right">{fmtINR(c.spend)}</td>
+                {hasSpend && <td className="px-3 py-2 text-right">{c.spend !== undefined ? fmtINR(c.spend) : "—"}</td>}
                 <td className="px-3 py-2 text-right">{fmtNum(c.impressions)}</td>
                 <td className="px-3 py-2 text-right">{fmtNum(c.clicks)}</td>
                 <td className="px-3 py-2 text-right">{c.ctr != null ? `${c.ctr.toFixed(1)}%` : "—"}</td>
                 <td className="px-3 py-2 text-right">{fmtNum(c.leads)}</td>
                 <td className="px-3 py-2 text-right">{fmtNum(c.conversions)}</td>
-                <td className="px-3 py-2 text-right text-green-500">{fmtINR(c.revenue)}</td>
-                <td className={`py-2 pl-3 text-right font-semibold ${c.roas == null ? "text-muted-foreground" : c.roas >= 1 ? "text-green-500" : "text-red-500"}`}>
-                  {c.roas != null ? `${c.roas.toFixed(2)}x` : "—"}
-                </td>
+                {hasRevenue && <td className="px-3 py-2 text-right text-green-500">{c.revenue !== undefined ? fmtINR(c.revenue) : "—"}</td>}
+                {hasRoas && (
+                  <td className={`py-2 pl-3 text-right font-semibold ${c.roas == null ? "text-muted-foreground" : c.roas >= 1 ? "text-green-500" : "text-red-500"}`}>
+                    {c.roas != null ? `${c.roas.toFixed(2)}x` : "—"}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
@@ -475,6 +510,39 @@ interface Report {
   generatedAt: string
 }
 
+interface PublishedReport {
+  id: number; type: string; title: string
+  periodFrom: string; periodTo: string; approvedAt: string | null; createdAt: string
+}
+
+function PublishedReports({ projectId }: { projectId: number }) {
+  const { data, isLoading, isError } = useQuery<PublishedReport[]>({
+    queryKey: ["/api/client/marketing/projects", projectId, "reports"],
+    queryFn: () => fetchJson(`/api/client/marketing/projects/${projectId}/reports`),
+  })
+  if (isLoading || isError || !data || data.length === 0) return null
+  return (
+    <div className="rounded-lg border p-4">
+      <h3 className="mb-3 font-semibold">Published reports</h3>
+      <div className="space-y-2">
+        {data.map((r) => (
+          <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 rounded border p-3">
+            <div>
+              <div className="font-medium">{r.title}</div>
+              <div className="text-xs text-muted-foreground">{cap(r.type)} · {r.periodFrom} → {r.periodTo}</div>
+            </div>
+            <Button variant="outline" size="sm" asChild>
+              <a href={`/api/client/marketing/projects/${projectId}/reports/${r.id}/pdf`} download>
+                <Download className="mr-2 h-4 w-4" /> Download PDF
+              </a>
+            </Button>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export function ReportsSection({ projectId }: { projectId: number }) {
   const range = useDateRange()
   const { from, to } = range.dates
@@ -518,6 +586,7 @@ export function ReportsSection({ projectId }: { projectId: number }) {
 
   return (
     <div className="space-y-4">
+      <PublishedReports projectId={projectId} />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <DateRangePicker range={range} />
         <Button variant="outline" onClick={printReport}><Printer className="mr-2 h-4 w-4" /> Print / Save PDF</Button>

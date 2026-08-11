@@ -16,7 +16,7 @@ import {
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/hooks/use-toast"
-import { Plus, Trash2, UserPlus, X, Briefcase, Eye, Sparkles, ScrollText, Share2 } from "lucide-react"
+import { Plus, Trash2, UserPlus, X, Briefcase, Eye, Sparkles, ScrollText, Share2, FileText, Plug, RefreshCw, Download } from "lucide-react"
 
 interface ProjectMember {
   id: number
@@ -251,6 +251,8 @@ function ProjectCard({ project, users, companyName, onDelete, onAddMember, onRem
         <div className="flex flex-wrap gap-2 pt-1">
           <ShareRecordsDialog projectId={project.id} companyId={project.companyId} />
           <VisibilityDialog projectId={project.id} />
+          <ReportsDialog projectId={project.id} />
+          <AdConnectionsDialog companyId={project.companyId} />
           <AiPlansDialog projectId={project.id} />
           <AuditDialog projectId={project.id} />
         </div>
@@ -553,6 +555,248 @@ function AuditDialog({ projectId }: { projectId: number }) {
                   </div>
                 </div>
                 <span className="shrink-0 text-xs text-muted-foreground">{new Date(r.createdAt).toLocaleString("en-IN")}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/* ------------------------- Marketing PDF reports ------------------------- */
+
+interface AdminReport {
+  id: number; type: string; title: string; status: string
+  periodFrom: string; periodTo: string; createdAt: string; approvedAt: string | null
+}
+
+const toYMD = (d: Date) => {
+  const pad = (n: number) => String(n).padStart(2, "0")
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+function ReportsDialog({ projectId }: { projectId: number }) {
+  const [open, setOpen] = React.useState(false)
+  const qc = useQueryClient()
+  const { toast } = useToast()
+  const [type, setType] = React.useState("monthly")
+  const [from, setFrom] = React.useState(toYMD(new Date(Date.now() - 29 * 86400000)))
+  const [to, setTo] = React.useState(toYMD(new Date()))
+
+  const { data: reports, isLoading } = useQuery<AdminReport[]>({
+    queryKey: ["/api/marketing-projects", projectId, "reports"],
+    queryFn: () => adminApi.get(`/marketing-projects/${projectId}/reports`),
+    enabled: open,
+  })
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["/api/marketing-projects", projectId, "reports"] })
+
+  const genMut = useMutation({
+    mutationFn: () => adminApi.post(`/marketing-projects/${projectId}/reports`, { type, from, to }),
+    onSuccess: () => { invalidate(); toast({ title: "Report generated", description: "Review it, then approve to publish to the client portal." }) },
+    onError: (e: Error) => toast({ title: "Failed to generate report", description: e.message, variant: "destructive" }),
+  })
+  const actionMut = useMutation({
+    mutationFn: (v: { id: number; action: "approve" | "archive" }) =>
+      adminApi.patch(`/marketing-projects/${projectId}/reports/${v.id}`, { action: v.action }),
+    onSuccess: invalidate,
+    onError: (e: Error) => toast({ title: "Failed to update report", description: e.message, variant: "destructive" }),
+  })
+  const delMut = useMutation({
+    mutationFn: (id: number) => adminApi.del(`/marketing-projects/${projectId}/reports/${id}`),
+    onSuccess: invalidate,
+    onError: (e: Error) => toast({ title: "Failed to delete report", description: e.message, variant: "destructive" }),
+  })
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm"><FileText className="mr-2 h-4 w-4" /> Reports</Button>
+      </DialogTrigger>
+      <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+        <DialogHeader><DialogTitle>PDF reports</DialogTitle></DialogHeader>
+        <p className="text-sm text-muted-foreground">
+          Generate a report snapshot for a period, review the PDF, then approve it to publish it in the client portal.
+        </p>
+        <div className="flex flex-wrap items-end gap-2">
+          <div>
+            <Label className="text-xs">Type</Label>
+            <Select value={type} onValueChange={setType}>
+              <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="weekly">Weekly</SelectItem>
+                <SelectItem value="monthly">Monthly</SelectItem>
+                <SelectItem value="campaign">Campaign</SelectItem>
+                <SelectItem value="custom">Custom</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-xs">From</Label>
+            <Input type="date" className="w-38" value={from} onChange={(e) => setFrom(e.target.value)} />
+          </div>
+          <div>
+            <Label className="text-xs">To</Label>
+            <Input type="date" className="w-38" value={to} onChange={(e) => setTo(e.target.value)} />
+          </div>
+          <Button size="sm" onClick={() => genMut.mutate()} disabled={genMut.isPending}>
+            {genMut.isPending ? "Generating…" : "Generate"}
+          </Button>
+        </div>
+        {isLoading ? (
+          <p className="py-4 text-sm text-muted-foreground">Loading…</p>
+        ) : !reports || reports.length === 0 ? (
+          <p className="py-4 text-sm text-muted-foreground">No reports yet.</p>
+        ) : (
+          <div className="space-y-2">
+            {reports.map((r) => (
+              <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 font-medium">
+                    {r.title}
+                    <Badge variant={r.status === "approved" ? "default" : "secondary"} className="capitalize">{r.status}</Badge>
+                  </div>
+                  <div className="text-xs text-muted-foreground">{r.periodFrom} → {r.periodTo}</div>
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <Button variant="outline" size="sm" asChild>
+                    <a href={`/api/marketing-projects/${projectId}/reports/${r.id}/pdf`} download>
+                      <Download className="mr-1 h-3.5 w-3.5" /> PDF
+                    </a>
+                  </Button>
+                  {r.status === "draft" && (
+                    <Button size="sm" onClick={() => actionMut.mutate({ id: r.id, action: "approve" })} disabled={actionMut.isPending}>
+                      Approve
+                    </Button>
+                  )}
+                  {r.status === "approved" && (
+                    <Button variant="outline" size="sm" onClick={() => actionMut.mutate({ id: r.id, action: "archive" })} disabled={actionMut.isPending}>
+                      Archive
+                    </Button>
+                  )}
+                  <Button variant="ghost" size="icon" aria-label="Delete report"
+                    onClick={() => delMut.mutate(r.id)} disabled={delMut.isPending}>
+                    <Trash2 className="h-4 w-4 text-destructive" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/* ------------------------- Ad platform connections ------------------------ */
+
+interface AdConnection {
+  id: number; companyId: number; platform: string; status: string
+  accountLabel: string | null; lastSyncedAt: string | null; lastError: string | null
+  accounts: { id: number; externalId: string; name: string; currency: string; syncEnabled: boolean }[]
+}
+
+function AdConnectionsDialog({ companyId }: { companyId: number }) {
+  const [open, setOpen] = React.useState(false)
+  const qc = useQueryClient()
+  const { toast } = useToast()
+  const [token, setToken] = React.useState("")
+  const [label, setLabel] = React.useState("")
+
+  const { data: connections, isLoading } = useQuery<AdConnection[]>({
+    queryKey: ["/api/ad-connections"],
+    queryFn: () => adminApi.get("/ad-connections"),
+    enabled: open,
+  })
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["/api/ad-connections"] })
+
+  const connectMut = useMutation({
+    mutationFn: () => adminApi.post("/ad-connections/meta", { companyId, accessToken: token, accountLabel: label || undefined }),
+    onSuccess: () => { setToken(""); setLabel(""); invalidate(); toast({ title: "Meta connected", description: "Enable the ad accounts you want to sync, then run Sync Now." }) },
+    onError: (e: Error) => toast({ title: "Failed to connect Meta", description: e.message, variant: "destructive" }),
+  })
+  const toggleMut = useMutation({
+    mutationFn: (v: { connectionId: number; accountId: number; syncEnabled: boolean }) =>
+      adminApi.patch(`/ad-connections/${v.connectionId}/accounts/${v.accountId}`, { syncEnabled: v.syncEnabled }),
+    onSuccess: invalidate,
+    onError: (e: Error) => toast({ title: "Failed to update account", description: e.message, variant: "destructive" }),
+  })
+  const syncMut = useMutation({
+    mutationFn: (id: number) => adminApi.post(`/ad-connections/${id}/sync`, {}),
+    onSuccess: (r: { rows: number; status: string }) => { invalidate(); toast({ title: "Sync finished", description: `${r.rows} daily rows updated (${r.status}).` }) },
+    onError: (e: Error) => toast({ title: "Sync failed", description: e.message, variant: "destructive" }),
+  })
+  const disconnectMut = useMutation({
+    mutationFn: (id: number) => adminApi.del(`/ad-connections/${id}`),
+    onSuccess: invalidate,
+    onError: (e: Error) => toast({ title: "Failed to disconnect", description: e.message, variant: "destructive" }),
+  })
+
+  const companyConnections = (connections ?? []).filter((c) => c.companyId === companyId)
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm"><Plug className="mr-2 h-4 w-4" /> Ad Accounts</Button>
+      </DialogTrigger>
+      <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+        <DialogHeader><DialogTitle>Ad platform connections</DialogTitle></DialogHeader>
+        <p className="text-sm text-muted-foreground">
+          Connect Meta with a long-lived System User access token from your Meta app
+          (Business Settings → System Users → Generate token with <code>ads_read</code>).
+          Metrics sync automatically at 08:00, 12:00, 16:00 and 20:00 IST.
+        </p>
+        <div className="space-y-2 rounded-md border p-3">
+          <Label className="text-xs">Meta access token</Label>
+          <Input type="password" value={token} placeholder="EAAB…" onChange={(e) => setToken(e.target.value)} />
+          <Label className="text-xs">Label (optional)</Label>
+          <Input value={label} placeholder="e.g. LHO Business Manager" onChange={(e) => setLabel(e.target.value)} />
+          <Button size="sm" onClick={() => connectMut.mutate()} disabled={!token || connectMut.isPending}>
+            {connectMut.isPending ? "Connecting…" : "Connect Meta"}
+          </Button>
+        </div>
+        {isLoading ? (
+          <p className="py-2 text-sm text-muted-foreground">Loading…</p>
+        ) : companyConnections.length === 0 ? (
+          <p className="py-2 text-sm text-muted-foreground">No connections for this company yet.</p>
+        ) : (
+          <div className="space-y-3">
+            {companyConnections.map((c) => (
+              <div key={c.id} className="rounded-md border p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <div className="flex items-center gap-2 font-medium">
+                      <span className="capitalize">{c.platform}</span>
+                      {c.accountLabel && <span className="text-sm text-muted-foreground">· {c.accountLabel}</span>}
+                      <Badge variant={c.status === "connected" ? "default" : "destructive"} className="capitalize">{c.status}</Badge>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {c.lastSyncedAt ? `Last synced ${new Date(c.lastSyncedAt).toLocaleString("en-IN")}` : "Never synced"}
+                    </div>
+                    {c.lastError && <div className="text-xs text-destructive">{c.lastError}</div>}
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Button variant="outline" size="sm" onClick={() => syncMut.mutate(c.id)} disabled={syncMut.isPending}>
+                      <RefreshCw className={`mr-1 h-3.5 w-3.5 ${syncMut.isPending ? "animate-spin" : ""}`} /> Sync now
+                    </Button>
+                    <Button variant="ghost" size="icon" aria-label="Disconnect"
+                      onClick={() => disconnectMut.mutate(c.id)} disabled={disconnectMut.isPending}>
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </div>
+                </div>
+                <div className="mt-2 space-y-1.5">
+                  {c.accounts.map((a) => (
+                    <div key={a.id} className="flex items-center justify-between rounded border px-3 py-1.5 text-sm">
+                      <div>
+                        <span className="font-medium">{a.name}</span>
+                        <span className="ml-2 text-xs text-muted-foreground">{a.externalId} · {a.currency}</span>
+                      </div>
+                      <Switch checked={a.syncEnabled}
+                        onCheckedChange={(v) => toggleMut.mutate({ connectionId: c.id, accountId: a.id, syncEnabled: v })} />
+                    </div>
+                  ))}
+                </div>
               </div>
             ))}
           </div>

@@ -10,7 +10,10 @@ import {
   campaignLeadsTable,
   clientVisibilitySettingsTable,
   clientAiPlansTable,
+  marketingReportsTable,
 } from "@workspace/db";
+import { buildReportPayload } from "../lib/marketing-data";
+import { renderReportPdf } from "../lib/report-pdf";
 import { eq, and, desc, inArray } from "drizzle-orm";
 import { z } from "zod/v4";
 import { requireSuperAdmin } from "../middleware/authz";
@@ -276,6 +279,107 @@ router.patch("/marketing-projects/:id/ai-plans/:planId", async (req, res) => {
     logClientEvent(req, projectId, "portal.ai_plan_reviewed", { planId, action: parsed.data.action });
     res.json(updated);
   } catch (e) { req.log.error(e); res.status(500).json({ error: "Failed to update AI plan" }); }
+});
+
+/* --------------------------- Marketing reports --------------------------- */
+
+const createReportSchema = z.object({
+  type: z.enum(["weekly", "monthly", "campaign", "custom"]).default("custom"),
+  title: z.string().min(1).max(200).optional(),
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+});
+
+router.get("/marketing-projects/:id/reports", async (req, res) => {
+  try {
+    const projectId = parseInt(req.params.id);
+    const rows = await db.select().from(marketingReportsTable)
+      .where(eq(marketingReportsTable.projectId, projectId))
+      .orderBy(desc(marketingReportsTable.createdAt))
+      .limit(100);
+    // Payload snapshots can be large — list view returns metadata only.
+    res.json(rows.map(({ payload: _p, ...r }) => r));
+  } catch (e) { req.log.error(e); res.status(500).json({ error: "Failed to list reports" }); }
+});
+
+router.post("/marketing-projects/:id/reports", async (req, res) => {
+  try {
+    const projectId = parseInt(req.params.id);
+    const [project] = await db.select().from(marketingProjectsTable).where(eq(marketingProjectsTable.id, projectId));
+    if (!project) { res.status(404).json({ error: "Project not found" }); return; }
+    const parsed = createReportSchema.safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({ error: "Invalid input" }); return; }
+    const from = new Date(`${parsed.data.from}T00:00:00`);
+    const to = new Date(`${parsed.data.to}T23:59:59.999`);
+    if (isNaN(from.getTime()) || isNaN(to.getTime()) || from > to) { res.status(400).json({ error: "Invalid date range" }); return; }
+    const len = to.getTime() - from.getTime();
+    const range = { from, to, prevFrom: new Date(from.getTime() - len - 1), prevTo: new Date(from.getTime() - 1) };
+    const vis = await getClientVisibility(projectId);
+    const payload = await buildReportPayload(project, vis, range);
+    const user = (req as any).localUser;
+    const defaultTitle = `${parsed.data.type.charAt(0).toUpperCase()}${parsed.data.type.slice(1)} Marketing Report`;
+    const [row] = await db.insert(marketingReportsTable).values({
+      projectId,
+      companyId: project.companyId,
+      type: parsed.data.type,
+      title: parsed.data.title || defaultTitle,
+      periodFrom: parsed.data.from,
+      periodTo: parsed.data.to,
+      status: "draft",
+      payload,
+      generatedByUserId: user?.id ?? null,
+    }).returning();
+    const { payload: _p, ...meta } = row;
+    res.status(201).json(meta);
+  } catch (e) { req.log.error(e); res.status(500).json({ error: "Failed to generate report" }); }
+});
+
+const reportActionSchema = z.object({ action: z.enum(["approve", "archive"]) });
+
+router.patch("/marketing-projects/:id/reports/:reportId", async (req, res) => {
+  try {
+    const projectId = parseInt(req.params.id);
+    const reportId = parseInt(req.params.reportId);
+    const parsed = reportActionSchema.safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({ error: "Invalid input" }); return; }
+    const [report] = await db.select().from(marketingReportsTable)
+      .where(and(eq(marketingReportsTable.id, reportId), eq(marketingReportsTable.projectId, projectId)));
+    if (!report) { res.status(404).json({ error: "Report not found" }); return; }
+    const user = (req as any).localUser;
+    const set = parsed.data.action === "approve"
+      ? { status: "approved", approvedByUserId: user?.id ?? null, approvedAt: new Date(), updatedAt: new Date() }
+      : { status: "archived", updatedAt: new Date() };
+    const [updated] = await db.update(marketingReportsTable).set(set)
+      .where(eq(marketingReportsTable.id, reportId)).returning();
+    const { payload: _p, ...meta } = updated;
+    res.json(meta);
+  } catch (e) { req.log.error(e); res.status(500).json({ error: "Failed to update report" }); }
+});
+
+router.delete("/marketing-projects/:id/reports/:reportId", async (req, res) => {
+  try {
+    const projectId = parseInt(req.params.id);
+    const reportId = parseInt(req.params.reportId);
+    const [row] = await db.delete(marketingReportsTable)
+      .where(and(eq(marketingReportsTable.id, reportId), eq(marketingReportsTable.projectId, projectId)))
+      .returning();
+    if (!row) { res.status(404).json({ error: "Report not found" }); return; }
+    res.json({ ok: true });
+  } catch (e) { req.log.error(e); res.status(500).json({ error: "Failed to delete report" }); }
+});
+
+router.get("/marketing-projects/:id/reports/:reportId/pdf", async (req, res) => {
+  try {
+    const projectId = parseInt(req.params.id);
+    const reportId = parseInt(req.params.reportId);
+    const [report] = await db.select().from(marketingReportsTable)
+      .where(and(eq(marketingReportsTable.id, reportId), eq(marketingReportsTable.projectId, projectId)));
+    if (!report || !report.payload) { res.status(404).json({ error: "Report not found" }); return; }
+    const pdf = await renderReportPdf(report.title, report.type, report.payload as any);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="report-${report.id}.pdf"`);
+    res.send(pdf);
+  } catch (e) { req.log.error(e); res.status(500).json({ error: "Failed to render report PDF" }); }
 });
 
 /* ----------------------- Client access audit viewer ----------------------- */

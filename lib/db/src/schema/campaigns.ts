@@ -7,6 +7,8 @@ export const campaignsTable = pgTable("campaigns", {
   companyId: integer("company_id").notNull(),
   projectId: integer("project_id"), // nullable: marketing project (client portal tenancy)
   clientVisible: boolean("client_visible").notNull().default(false), // visible in the client portal
+  externalId: text("external_id"), // platform campaign id (Meta/Google) when synced
+  adAccountId: integer("ad_account_id"), // FK ad_accounts.id when synced from a platform
   name: text("name").notNull(),
   channel: text("channel").notNull().default("meta"), // meta|google|instagram|facebook|whatsapp|email
   objective: text("objective").default("conversions"), // awareness|traffic|leads|conversions|sales

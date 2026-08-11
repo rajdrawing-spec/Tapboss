@@ -2,14 +2,20 @@ import { Router } from "express";
 import type { User } from "@workspace/db";
 import {
   db, marketingProjectsTable, marketingProjectMembersTable,
-  campaignsTable, campaignCreativesTable, campaignLeadsTable, ordersTable,
-  clientAiPlansTable,
+  campaignsTable, campaignCreativesTable, campaignLeadsTable,
+  clientAiPlansTable, marketingReportsTable,
 } from "@workspace/db";
 import { eq, and, inArray, desc, gte, lte } from "drizzle-orm";
 import { requirePermission } from "../middleware/authz";
 import { projectScope, requireProjectAccess } from "../lib/project-scope";
 import { getClientVisibility, logClientEvent, type ClientVisibilitySettings } from "../lib/client-visibility";
 import { getActiveProvider, getActiveProviderName } from "../lib/ai-provider";
+import {
+  parseRange, bucketKey, CANCELLED_STATUSES, fetchOrders, orderStats,
+  fetchProjectCampaigns, campaignTotals, pctChange, fetchDailyMetrics,
+  buildReportPayload, redactReportPayload,
+} from "../lib/marketing-data";
+import { renderReportPdf } from "../lib/report-pdf";
 
 /**
  * Client Marketing Portal API — the ONLY API surface reachable by client-role
@@ -69,18 +75,8 @@ router.get("/client/marketing/context", async (req, res) => {
 // brand per company) and reduced to client-safe fields only.
 
 /* ------------------------------ helpers ------------------------------ */
-
-interface DateRange { from: Date; to: Date; prevFrom: Date; prevTo: Date }
-
-/** Parse ?from=YYYY-MM-DD&to=YYYY-MM-DD (defaults: last 30 days) and derive the equal-length previous period. */
-function parseRange(req: import("express").Request): DateRange | null {
-  const q = req.query as Record<string, string>;
-  const to = q.to ? new Date(`${q.to}T23:59:59.999`) : new Date();
-  const from = q.from ? new Date(`${q.from}T00:00:00`) : new Date(to.getTime() - 29 * 86400000);
-  if (isNaN(from.getTime()) || isNaN(to.getTime()) || from > to) return null;
-  const len = to.getTime() - from.getTime();
-  return { from, to, prevFrom: new Date(from.getTime() - len - 1), prevTo: new Date(from.getTime() - 1) };
-}
+// Data helpers (parseRange, orderStats, campaignTotals, …) live in
+// ../lib/marketing-data and are shared with internal report generation.
 
 function parsePagination(req: import("express").Request): { page: number; pageSize: number } {
   const q = req.query as Record<string, string>;
@@ -88,72 +84,6 @@ function parsePagination(req: import("express").Request): { page: number; pageSi
   const pageSize = Math.min(100, Math.max(1, parseInt(q.pageSize || "20") || 20));
   return { page, pageSize };
 }
-
-/** Local-time bucket key for a date (day | week | month). */
-function bucketKey(d: Date, group: string): string {
-  const y = d.getFullYear(), m = d.getMonth() + 1, day = d.getDate();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  if (group === "month") return `${y}-${pad(m)}`;
-  if (group === "week") {
-    const monday = new Date(d);
-    monday.setDate(day - ((d.getDay() + 6) % 7));
-    return `${monday.getFullYear()}-${pad(monday.getMonth() + 1)}-${pad(monday.getDate())}`;
-  }
-  return `${y}-${pad(m)}-${pad(day)}`;
-}
-
-const CANCELLED_STATUSES = ["cancelled", "returned", "refunded"];
-
-/** Orders in a range for a company (client-safe aggregation source). */
-async function fetchOrders(companyId: number, from: Date, to: Date) {
-  return db.select().from(ordersTable)
-    .where(and(eq(ordersTable.companyId, companyId), gte(ordersTable.createdAt, from), lte(ordersTable.createdAt, to)))
-    .orderBy(desc(ordersTable.createdAt));
-}
-
-/**
- * Order stats policy: "net" orders/revenue = every order that has not been
- * cancelled, returned or refunded (pending/confirmed/processing/shipped/
- * delivered all count — the business books an order at placement, and
- * reversals are removed). Field names + UI labels say "net" explicitly.
- */
-function orderStats(orders: { status: string; totalAmount: number; itemCount: number }[]) {
-  const cancelled = orders.filter((o) => o.status === "cancelled").length;
-  const returned = orders.filter((o) => o.status === "returned" || o.status === "refunded").length;
-  const counted = orders.filter((o) => !CANCELLED_STATUSES.includes(o.status));
-  const revenue = counted.reduce((s, o) => s + (Number(o.totalAmount) || 0), 0);
-  return {
-    totalOrders: orders.length,
-    netOrders: counted.length,
-    cancelledOrders: cancelled,
-    returnedOrders: returned,
-    revenue,
-    aov: counted.length > 0 ? revenue / counted.length : 0,
-  };
-}
-
-/** Client-visible campaigns of the project (KPI + list source). */
-async function fetchProjectCampaigns(projectId: number) {
-  return db.select().from(campaignsTable)
-    .where(and(eq(campaignsTable.projectId, projectId), eq(campaignsTable.clientVisible, true)))
-    .orderBy(desc(campaignsTable.createdAt));
-}
-
-function campaignTotals(rows: any[]) {
-  const t = { spend: 0, revenue: 0, impressions: 0, clicks: 0, leads: 0, conversions: 0 };
-  for (const c of rows) {
-    t.spend += Number(c.spent) || 0;
-    t.revenue += Number(c.revenue) || 0;
-    t.impressions += Number(c.impressions) || 0;
-    t.clicks += Number(c.clicks) || 0;
-    t.leads += Number(c.leads) || 0;
-    t.conversions += Number(c.conversions) || 0;
-  }
-  return t;
-}
-
-const pctChange = (cur: number, prev: number): number | null =>
-  prev > 0 ? ((cur - prev) / prev) * 100 : null;
 
 /* ------------------------------ visibility ------------------------------ */
 
@@ -187,6 +117,7 @@ router.get("/client/marketing/projects/:projectId/overview", requireProjectAcces
       fetchOrders(project.companyId, range.from, range.to),
       fetchOrders(project.companyId, range.prevFrom, range.prevTo),
       fetchProjectCampaigns(project.id),
+      // (leads current + previous below)
       db.select().from(campaignLeadsTable).where(and(
         eq(campaignLeadsTable.projectId, project.id), eq(campaignLeadsTable.clientVisible, true),
         gte(campaignLeadsTable.createdAt, range.from), lte(campaignLeadsTable.createdAt, range.to),
@@ -204,11 +135,19 @@ router.get("/client/marketing/projects/:projectId/overview", requireProjectAcces
     const prevLeads = prevLeadRows.length;
     const convertedLeads = leadRows.filter((l: any) => l.status === "converted").length;
 
-    // Timeseries: orders revenue/count + leads per bucket.
-    const buckets = new Map<string, { period: string; revenue: number; orders: number; leads: number }>();
-    const bump = (key: string, patch: Partial<{ revenue: number; orders: number; leads: number }>) => {
-      const b = buckets.get(key) ?? { period: key, revenue: 0, orders: 0, leads: 0 };
+    // Daily platform metrics (synced from Meta/Google or manual) power the
+    // spend/conversions trend lines when available.
+    const dailyRows = await fetchDailyMetrics(campaigns.map((c) => c.id), range.from, range.to);
+
+    // Timeseries: orders revenue/count + leads + daily spend/conversions per bucket.
+    // adRevenue is the platform-attributed revenue from daily metrics — ROAS is
+    // computed ONLY from aligned daily spend + daily ad revenue (mixing in
+    // whole-company order revenue would overstate it).
+    const buckets = new Map<string, { period: string; revenue: number; orders: number; leads: number; spend: number; conversions: number; adRevenue: number }>();
+    const bump = (key: string, patch: Partial<{ revenue: number; orders: number; leads: number; spend: number; conversions: number; adRevenue: number }>) => {
+      const b = buckets.get(key) ?? { period: key, revenue: 0, orders: 0, leads: 0, spend: 0, conversions: 0, adRevenue: 0 };
       b.revenue += patch.revenue ?? 0; b.orders += patch.orders ?? 0; b.leads += patch.leads ?? 0;
+      b.spend += patch.spend ?? 0; b.conversions += patch.conversions ?? 0; b.adRevenue += patch.adRevenue ?? 0;
       buckets.set(key, b);
     };
     for (const o of orders) {
@@ -216,6 +155,15 @@ router.get("/client/marketing/projects/:projectId/overview", requireProjectAcces
       bump(bucketKey(new Date(o.createdAt), group), { revenue: Number(o.totalAmount) || 0, orders: 1 });
     }
     for (const l of leadRows) bump(bucketKey(new Date((l as any).createdAt), group), { leads: 1 });
+    for (const m of dailyRows) {
+      bump(bucketKey(new Date(`${m.date}T12:00:00`), group), {
+        spend: Number(m.spend) || 0,
+        conversions: Number(m.conversions) || 0,
+        adRevenue: Number(m.revenue) || 0,
+      });
+    }
+    const hasDailySpend = dailyRows.some((m) => Number(m.spend) > 0);
+    const hasDailyConversions = dailyRows.some((m) => Number(m.conversions) > 0);
 
     // Enforce visibility toggles server-side: hidden KPIs are REMOVED from
     // the payload, not merely hidden in the UI.
@@ -254,6 +202,9 @@ router.get("/client/marketing/projects/:projectId/overview", requireProjectAcces
           ...(vis.revenue ? { revenue: b.revenue } : {}),
           ...(vis.orders ? { orders: b.orders } : {}),
           ...(vis.leads ? { leads: b.leads } : {}),
+          ...(vis.adSpend && hasDailySpend ? { spend: b.spend } : {}),
+          ...(vis.roas && hasDailySpend ? { roas: b.spend > 0 ? b.adRevenue / b.spend : null } : {}),
+          ...(vis.conversion && hasDailyConversions ? { conversions: b.conversions } : {}),
         })),
     });
   } catch (e) { req.log.error(e); res.status(500).json({ error: "Failed to load overview" }); }
@@ -459,70 +410,53 @@ router.get("/client/marketing/projects/:projectId/report", requireProjectAccess(
     const range = parseRange(req);
     if (!range) { res.status(400).json({ error: "Invalid date range" }); return; }
 
-    const [orders, prevOrders, campaigns, leadRows] = await Promise.all([
-      fetchOrders(project.companyId, range.from, range.to),
-      fetchOrders(project.companyId, range.prevFrom, range.prevTo),
-      fetchProjectCampaigns(project.id),
-      db.select().from(campaignLeadsTable).where(and(
-        eq(campaignLeadsTable.projectId, project.id), eq(campaignLeadsTable.clientVisible, true),
-        gte(campaignLeadsTable.createdAt, range.from), lte(campaignLeadsTable.createdAt, range.to),
-      )),
-    ]);
-
-    const cur = orderStats(orders);
-    const prev = orderStats(prevOrders);
-    const ct = campaignTotals(campaigns);
-
-    const ranked = campaigns
-      .map((c) => {
-        const spent = Number(c.spent) || 0, revenue = Number(c.revenue) || 0;
-        // Financial fields on highlights honor the same visibility toggles.
-        return {
-          id: c.id, name: c.name, channel: c.channel,
-          ...(vis.adSpend ? { spend: spent } : {}),
-          ...(vis.revenue ? { revenue } : {}),
-          ...(vis.roas ? { roas: spent > 0 ? revenue / spent : null } : {}),
-          _rank: spent > 0 ? revenue / spent : -1, _active: spent > 0 || revenue > 0,
-        };
-      })
-      .filter((c) => c._active)
-      .sort((a, b) => b._rank - a._rank)
-      .map(({ _rank, _active, ...c }) => c);
-
-    // Strip hidden KPIs per visibility settings (server-side enforcement).
-    const kpis: Record<string, number | null> = {};
-    if (vis.revenue) { kpis.revenue = cur.revenue; kpis.aov = cur.aov; }
-    if (vis.orders) kpis.orders = cur.netOrders;
-    if (vis.leads) kpis.leads = leadRows.length;
-
-    // Campaign metrics are lifetime running totals (no dated snapshots exist);
-    // reported separately and labeled "lifetime" in the UI/report.
-    const campaignLifetime: Record<string, number | null> = {};
-    if (vis.adSpend) campaignLifetime.adSpend = ct.spend;
-    if (vis.roas) campaignLifetime.roas = ct.spend > 0 ? ct.revenue / ct.spend : null;
-    if (vis.campaigns) {
-      campaignLifetime.impressions = ct.impressions;
-      campaignLifetime.clicks = ct.clicks;
-      campaignLifetime.ctr = ct.impressions > 0 ? (ct.clicks / ct.impressions) * 100 : null;
-    }
-
-    const comparison: Record<string, unknown> = {};
-    if (vis.revenue) comparison.revenue = { current: cur.revenue, previous: prev.revenue, change: pctChange(cur.revenue, prev.revenue) };
-    if (vis.orders) comparison.orders = { current: cur.netOrders, previous: prev.netOrders, change: pctChange(cur.netOrders, prev.netOrders) };
-
+    const payload = await buildReportPayload(project, vis, range);
     logClientEvent(req, project.id, "portal.report_viewed", { from: range.from.toISOString(), to: range.to.toISOString() });
-
-    res.json({
-      project: { id: project.id, name: project.name, brandName: project.brandName ?? project.name },
-      range: { from: range.from.toISOString(), to: range.to.toISOString() },
-      kpis,
-      campaignLifetime,
-      bestCampaign: vis.campaigns ? ranked[0] ?? null : null,
-      worstCampaign: vis.campaigns && ranked.length > 1 ? ranked[ranked.length - 1] : null,
-      comparison,
-      generatedAt: new Date().toISOString(),
-    });
+    res.json(payload);
   } catch (e) { req.log.error(e); res.status(500).json({ error: "Failed to build report" }); }
+});
+
+/** Approved (published) PDF reports for the client. */
+router.get("/client/marketing/projects/:projectId/reports", requireProjectAccess(), async (req, res) => {
+  try {
+    const project = (req as any).project;
+    const vis = await getClientVisibility(project.id);
+    if (!vis.reports) { res.status(403).json({ error: "This section is not enabled for your portal" }); return; }
+    const rows = await db.select().from(marketingReportsTable)
+      .where(and(eq(marketingReportsTable.projectId, project.id), eq(marketingReportsTable.status, "approved")))
+      .orderBy(desc(marketingReportsTable.createdAt))
+      .limit(50);
+    res.json(rows.map((r) => ({
+      id: r.id, type: r.type, title: r.title,
+      periodFrom: r.periodFrom, periodTo: r.periodTo,
+      approvedAt: r.approvedAt, createdAt: r.createdAt,
+    })));
+  } catch (e) { req.log.error(e); res.status(500).json({ error: "Failed to list reports" }); }
+});
+
+/** Download an approved report as PDF (rendered from the stored snapshot). */
+router.get("/client/marketing/projects/:projectId/reports/:reportId/pdf", requireProjectAccess(), async (req, res) => {
+  try {
+    const project = (req as any).project;
+    const vis = await getClientVisibility(project.id);
+    if (!vis.reports) { res.status(403).json({ error: "This section is not enabled for your portal" }); return; }
+    const reportId = parseInt(String(req.params.reportId));
+    if (!Number.isFinite(reportId)) { res.status(400).json({ error: "Invalid report id" }); return; }
+    const [report] = await db.select().from(marketingReportsTable).where(and(
+      eq(marketingReportsTable.id, reportId),
+      eq(marketingReportsTable.projectId, project.id),
+      eq(marketingReportsTable.status, "approved"),
+    ));
+    if (!report || !report.payload) { res.status(404).json({ error: "Report not found" }); return; }
+    logClientEvent(req, project.id, "portal.report_downloaded", { reportId, title: report.title });
+    // Re-apply CURRENT visibility — metrics hidden after approval must not
+    // keep leaking through previously generated snapshots.
+    const safePayload = redactReportPayload(report.payload as any, vis);
+    const pdf = await renderReportPdf(report.title, report.type, safePayload);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${report.title.replace(/[^a-z0-9-_ ]/gi, "")}.pdf"`);
+    res.send(pdf);
+  } catch (e) { req.log.error(e); res.status(500).json({ error: "Failed to download report" }); }
 });
 
 /* ------------------------------ AI copilot ------------------------------ */

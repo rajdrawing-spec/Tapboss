@@ -51,4 +51,5 @@
 - [TBOS meeting visibility across companies](tbos-meeting-cross-company-visibility.md) — workspace list must include meetings the user is invited to, not just meetings in their assigned companies; otherwise invited non-company members see empty meeting lists.
 - [Vite manualChunks TDZ crash](vite-manual-chunks-tdz.md) — manual vendor chunking caused circular chunks and a prod-only blank-screen crash; treat "Circular chunk" warnings as release blockers.
 - [Gemini model deprecation](gemini-model-deprecation.md) — "gemini-2.5-flash" 404s for new API keys; use the "gemini-flash-latest" alias; models can appear in models.list yet still be rejected at generateContent.
+- [TBOS marketing intelligence](tbos-marketing-intelligence.md) — daily ad metrics dedupe, ROAS from aligned daily data only, report PDFs re-redacted at download, Meta token connect, @swc/helpers needed for pdfkit bundle.
 - [TBOS fake DB query-builder methods](tbos-fake-db-methods.md) — copy the full QB chain (returning/for/onConflictDoNothing) when reusing the fake DB, or insert paths fail with 'not a function'.

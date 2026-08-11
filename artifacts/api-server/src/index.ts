@@ -5,6 +5,7 @@ import { ensureSystemRoles } from "./lib/seed-roles";
 import { ensureStarterCompanies } from "./lib/seed-companies";
 import { startIntegrationScheduler } from "./lib/integration-sync";
 import { startAiTaskScheduler } from "./lib/ai-tasks/scheduler";
+import { startAdSyncScheduler } from "./lib/ad-sync";
 
 import { registerAdapters } from "./lib/adapters";
 import { applyMigrations, repairOrphanedAllocations, removeAutoAllocationRows } from "./lib/migrations";
@@ -42,6 +43,7 @@ server.listen(port, () => {
   registerAdapters();
   startIntegrationScheduler();
   startAiTaskScheduler().catch((err) => logger.error({ err }, "Failed to start AI task scheduler"));
+  startAdSyncScheduler();
 }).on('error', (err: Error) => {
   logger.error({ err }, "Error listening on port");
   process.exit(1);
