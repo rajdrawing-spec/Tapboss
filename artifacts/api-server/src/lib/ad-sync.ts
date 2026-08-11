@@ -20,7 +20,11 @@ import { logger } from "./logger";
 
 /* ------------------------- credential handling ------------------------- */
 
-export interface AdCredentials { accessToken: string; refreshToken?: string; expiresAt?: string }
+export interface AdCredentials {
+  accessToken?: string; refreshToken?: string; expiresAt?: string;
+  // Google Ads
+  developerToken?: string; clientId?: string; clientSecret?: string; loginCustomerId?: string;
+}
 
 export function encryptCredentials(creds: AdCredentials): string {
   const { encryptedValue, iv } = encryptValue(JSON.stringify(creds));
@@ -83,6 +87,182 @@ function actionValue(row: MetaDailyRow, types: string[]): number {
   return n;
 }
 
+/* --------------------------- Google Ads client -------------------------- */
+
+const GOOGLE_ADS_API = "https://googleads.googleapis.com/v18";
+
+/** Exchange the stored refresh token for a short-lived access token. */
+async function googleAccessToken(creds: AdCredentials): Promise<string> {
+  const res = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: creds.refreshToken ?? "",
+      client_id: creds.clientId ?? "",
+      client_secret: creds.clientSecret ?? "",
+    }),
+  });
+  const body: any = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = new Error(body?.error_description || body?.error || `Google OAuth error (HTTP ${res.status})`);
+    (err as any).googleAuthError = body?.error; // "invalid_grant" = refresh token revoked/expired
+    throw err;
+  }
+  return body.access_token as string;
+}
+
+async function googleAdsPost(path: string, accessToken: string, creds: AdCredentials, payload: unknown, loginCustomerId?: string): Promise<any> {
+  let attempt = 0;
+  for (;;) {
+    const res = await fetch(`${GOOGLE_ADS_API}${path}`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "developer-token": creds.developerToken ?? "",
+        "Content-Type": "application/json",
+        ...(loginCustomerId ? { "login-customer-id": loginCustomerId } : {}),
+      },
+      body: JSON.stringify(payload),
+    });
+    if (res.status === 429 && attempt < 3) {
+      attempt += 1;
+      await new Promise((r) => setTimeout(r, attempt * 15000));
+      continue;
+    }
+    const body: any = await res.json().catch(() => ({}));
+    if (res.ok) return body;
+    const detail = Array.isArray(body) ? body[0]?.error : body?.error;
+    const err = new Error(detail?.message || `Google Ads API error (HTTP ${res.status})`);
+    (err as any).googleStatus = res.status;
+    throw err;
+  }
+}
+
+const digitsOnly = (s: string) => s.replace(/[^0-9]/g, "");
+
+/**
+ * Validate Google Ads credentials and list accessible (non-manager) customer
+ * accounts. Used at connect time — nothing is stored if this fails.
+ */
+export async function googleListCustomers(creds: AdCredentials): Promise<{ externalId: string; name: string; currency: string }[]> {
+  const accessToken = await googleAccessToken(creds);
+  const res = await fetch(`${GOOGLE_ADS_API}/customers:listAccessibleCustomers`, {
+    headers: { Authorization: `Bearer ${accessToken}`, "developer-token": creds.developerToken ?? "" },
+  });
+  const body: any = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body?.error?.message || `Google Ads API error (HTTP ${res.status})`);
+  const ids: string[] = (body.resourceNames ?? []).map((r: string) => r.split("/")[1]);
+
+  const out: { externalId: string; name: string; currency: string }[] = [];
+  for (const id of ids) {
+    try {
+      // login-customer-id identifies the MANAGER (MCC) account a request goes
+      // through — it must be omitted for direct customer access.
+      const login = creds.loginCustomerId ? digitsOnly(creds.loginCustomerId) : undefined;
+      const data = await googleAdsPost(`/customers/${id}/googleAds:search`, accessToken, creds, {
+        query: "SELECT customer.id, customer.descriptive_name, customer.currency_code, customer.manager FROM customer",
+      }, login);
+      const c = data.results?.[0]?.customer;
+      if (c && !c.manager) out.push({ externalId: id, name: c.descriptiveName || `Account ${id}`, currency: c.currencyCode || "" });
+    } catch {
+      // Skip accounts we can't read (e.g. cancelled or wrong login-customer-id).
+    }
+  }
+  return out;
+}
+
+/** Sync one Google Ads connection: last N days of daily campaign metrics. */
+async function runGoogleSync(connectionId: number, trigger: "scheduled" | "manual", days = 30): Promise<{ jobId: number; status: string; rows: number }> {
+  const [conn] = await db.select().from(adConnectionsTable).where(eq(adConnectionsTable.id, connectionId));
+  if (!conn) throw new Error("Connection not found");
+  const [job] = await db.insert(syncJobsTable).values({
+    connectionId, companyId: conn.companyId, platform: conn.platform, trigger, status: "running",
+  }).returning();
+
+  let rows = 0;
+  let failedAccounts = 0;
+  try {
+    const creds = decryptCredentials(conn.credentialsEnc);
+    let accessToken: string;
+    try {
+      accessToken = await googleAccessToken(creds);
+    } catch (e: any) {
+      if (e.googleAuthError === "invalid_grant") {
+        await db.update(adConnectionsTable)
+          .set({ status: "expired", lastError: "Google refresh token revoked or expired — reconnect Google Ads.", updatedAt: new Date() })
+          .where(eq(adConnectionsTable.id, connectionId));
+      }
+      throw e;
+    }
+
+    const accounts = await db.select().from(adAccountsTable)
+      .where(and(eq(adAccountsTable.connectionId, connectionId), eq(adAccountsTable.syncEnabled, true)));
+    if (accounts.length === 0) await log(job.id, "warn", "No sync-enabled ad accounts on this connection");
+
+    const until = new Date();
+    const since = new Date(until.getTime() - (days - 1) * 86400000);
+    const dstr = (d: Date) => d.toISOString().slice(0, 10);
+    const query = `
+      SELECT segments.date, campaign.id, campaign.name,
+             metrics.cost_micros, metrics.impressions, metrics.clicks,
+             metrics.conversions, metrics.conversions_value
+      FROM campaign
+      WHERE segments.date BETWEEN '${dstr(since)}' AND '${dstr(until)}'`;
+
+    for (const account of accounts) {
+      try {
+        const login = creds.loginCustomerId ? digitsOnly(creds.loginCustomerId) : undefined;
+        let pageToken: string | undefined;
+        do {
+          const data = await googleAdsPost(`/customers/${account.externalId}/googleAds:search`, accessToken, creds, {
+            query, pageSize: 1000, ...(pageToken ? { pageToken } : {}),
+          }, login);
+          for (const r of data.results ?? []) {
+            const campaignId = await resolveLocalCampaign(
+              conn.companyId, account.id, String(r.campaign.id), r.campaign.name, "google",
+            );
+            await upsertDaily({
+              companyId: conn.companyId,
+              campaignId,
+              date: r.segments.date,
+              source: "google",
+              spend: (Number(r.metrics?.costMicros) || 0) / 1_000_000,
+              revenue: Number(r.metrics?.conversionsValue) || 0,
+              impressions: Number(r.metrics?.impressions) || 0,
+              reach: 0, // Google Ads has no daily reach metric at campaign level
+              clicks: Number(r.metrics?.clicks) || 0,
+              leads: 0,
+              conversions: Number(r.metrics?.conversions) || 0,
+            });
+            rows += 1;
+          }
+          pageToken = data.nextPageToken;
+        } while (pageToken);
+        await log(job.id, "info", `Synced customer ${account.externalId}`, { account: account.externalId });
+      } catch (e: any) {
+        failedAccounts += 1;
+        await log(job.id, "error", `Customer ${account.externalId} failed: ${e.message}`, { httpStatus: e.googleStatus ?? null });
+      }
+    }
+
+    await refreshChannelAggregates(conn.companyId, "google");
+
+    const status = failedAccounts > 0 ? "partial" : "success";
+    await db.update(syncJobsTable).set({ status, finishedAt: new Date(), rowsUpserted: rows }).where(eq(syncJobsTable.id, job.id));
+    await db.update(adConnectionsTable)
+      .set({ lastSyncedAt: new Date(), lastError: failedAccounts > 0 ? "Some accounts failed — see sync logs." : null, status: "connected", updatedAt: new Date() })
+      .where(eq(adConnectionsTable.id, connectionId));
+    return { jobId: job.id, status, rows };
+  } catch (e: any) {
+    await db.update(syncJobsTable).set({ status: "failed", finishedAt: new Date(), rowsUpserted: rows, error: e.message }).where(eq(syncJobsTable.id, job.id));
+    await db.update(adConnectionsTable)
+      .set({ lastError: e.message, updatedAt: new Date() })
+      .where(eq(adConnectionsTable.id, connectionId));
+    throw e;
+  }
+}
+
 /* ------------------------------ sync core ------------------------------ */
 
 async function log(jobId: number, level: string, message: string, detail?: unknown) {
@@ -127,10 +307,26 @@ async function refreshCampaignAggregates(campaignId: number): Promise<void> {
   }).where(eq(campaignsTable.id, campaignId));
 }
 
-/** Find-or-create the local campaign for a synced platform campaign. */
+/** Refresh lifetime aggregates for all synced campaigns of a company+channel. */
+async function refreshChannelAggregates(companyId: number, channel: string): Promise<void> {
+  const synced = await db.select({ id: campaignsTable.id }).from(campaignsTable)
+    .where(and(eq(campaignsTable.companyId, companyId), eq(campaignsTable.channel, channel)));
+  for (const c of synced) {
+    const [has] = await db.select({ id: campaignDailyMetricsTable.id }).from(campaignDailyMetricsTable)
+      .where(eq(campaignDailyMetricsTable.campaignId, c.id)).limit(1);
+    if (has) await refreshCampaignAggregates(c.id);
+  }
+}
+
+/**
+ * Find-or-create the local campaign for a synced platform campaign.
+ * Identity is (companyId, channel, externalId): platform campaign IDs are
+ * unique within a platform but could collide ACROSS platforms, and keying on
+ * the local ad-account row would fragment campaigns on reconnect.
+ */
 async function resolveLocalCampaign(companyId: number, adAccountId: number, externalId: string, name: string, channel: string): Promise<number> {
   const [existing] = await db.select().from(campaignsTable)
-    .where(and(eq(campaignsTable.companyId, companyId), eq(campaignsTable.externalId, externalId)));
+    .where(and(eq(campaignsTable.companyId, companyId), eq(campaignsTable.channel, channel), eq(campaignsTable.externalId, externalId)));
   if (existing) {
     if (existing.name !== name || existing.adAccountId !== adAccountId) {
       await db.update(campaignsTable).set({ name, adAccountId, updatedAt: new Date() }).where(eq(campaignsTable.id, existing.id));
@@ -143,7 +339,7 @@ async function resolveLocalCampaign(companyId: number, adAccountId: number, exte
   if (row) return row.id;
   // Concurrent insert won the race — reselect.
   const [again] = await db.select().from(campaignsTable)
-    .where(and(eq(campaignsTable.companyId, companyId), eq(campaignsTable.externalId, externalId)));
+    .where(and(eq(campaignsTable.companyId, companyId), eq(campaignsTable.channel, channel), eq(campaignsTable.externalId, externalId)));
   return again.id;
 }
 
@@ -159,6 +355,7 @@ export async function runMetaSync(connectionId: number, trigger: "scheduled" | "
   let failedAccounts = 0;
   try {
     const creds = decryptCredentials(conn.credentialsEnc);
+    const metaToken = creds.accessToken ?? "";
     const accounts = await db.select().from(adAccountsTable)
       .where(and(eq(adAccountsTable.connectionId, connectionId), eq(adAccountsTable.syncEnabled, true)));
     if (accounts.length === 0) await log(job.id, "warn", "No sync-enabled ad accounts on this connection");
@@ -171,7 +368,7 @@ export async function runMetaSync(connectionId: number, trigger: "scheduled" | "
       try {
         let after: string | undefined;
         do {
-          const data = await metaGet(`/${account.externalId}/insights`, creds.accessToken, {
+          const data = await metaGet(`/${account.externalId}/insights`, metaToken, {
             level: "campaign",
             time_increment: "1",
             fields: "campaign_id,campaign_name,spend,impressions,reach,clicks,actions,action_values",
@@ -212,14 +409,7 @@ export async function runMetaSync(connectionId: number, trigger: "scheduled" | "
       }
     }
 
-    // Refresh lifetime aggregates for all synced campaigns of this company.
-    const synced = await db.select({ id: campaignsTable.id }).from(campaignsTable)
-      .where(and(eq(campaignsTable.companyId, conn.companyId), eq(campaignsTable.channel, "meta")));
-    for (const c of synced) {
-      const [has] = await db.select({ id: campaignDailyMetricsTable.id }).from(campaignDailyMetricsTable)
-        .where(eq(campaignDailyMetricsTable.campaignId, c.id)).limit(1);
-      if (has) await refreshCampaignAggregates(c.id);
-    }
+    await refreshChannelAggregates(conn.companyId, "meta");
 
     const status = failedAccounts > 0 ? "partial" : "success";
     await db.update(syncJobsTable).set({ status, finishedAt: new Date(), rowsUpserted: rows }).where(eq(syncJobsTable.id, job.id));
@@ -240,6 +430,7 @@ export async function runSyncForConnection(connectionId: number, trigger: "sched
   const [conn] = await db.select().from(adConnectionsTable).where(eq(adConnectionsTable.id, connectionId));
   if (!conn) throw new Error("Connection not found");
   if (conn.platform === "meta") return runMetaSync(connectionId, trigger);
+  if (conn.platform === "google") return runGoogleSync(connectionId, trigger);
   throw new Error(`Sync for platform "${conn.platform}" is not implemented yet`);
 }
 

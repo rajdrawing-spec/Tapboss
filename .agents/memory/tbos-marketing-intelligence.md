@@ -9,3 +9,5 @@ description: Ad-platform sync, daily metrics, and PDF report design decisions
 - Sync scheduler: node-cron `0 8,12,16,20 * * *` Asia/Kolkata; Meta code 190 → mark connection expired and abort; codes 4/17/32/613 → backoff retry.
 - pdfkit bundling: api-server esbuild bundle needs `@swc/helpers` as a dependency (fontkit/brotli requires it at runtime) or the server crashes on start.
 - Client portal UI must render financial columns/series conditionally on field presence — the server strips hidden metrics, so unconditional columns show NaN.
+- Google Ads connects via pasted developer token + OAuth client id/secret + refresh token (v18 REST, GAQL searchStream-style search); `login-customer-id` header ONLY when an MCC id is supplied — never the target customer id; invalid_grant → connection "expired".
+- Synced campaign identity is (company_id, channel, external_id) — unique index campaigns_company_channel_external_uniq; keying on local ad-account row id would fragment campaigns on reconnect.

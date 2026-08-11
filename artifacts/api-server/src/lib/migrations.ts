@@ -890,7 +890,10 @@ export async function applyMigrations(): Promise<void> {
     await db.execute(sql`CREATE INDEX IF NOT EXISTS marketing_reports_project_idx ON marketing_reports(project_id, status)`);
     await db.execute(sql`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS external_id TEXT`);
     await db.execute(sql`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS ad_account_id INTEGER`);
-    await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS campaigns_company_external_uniq ON campaigns(company_id, external_id) WHERE external_id IS NOT NULL`);
+    // Identity is (company, channel, external_id) — platform campaign IDs are
+    // unique per platform but could collide across platforms.
+    await db.execute(sql`DROP INDEX IF EXISTS campaigns_company_external_uniq`);
+    await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS campaigns_company_channel_external_uniq ON campaigns(company_id, channel, external_id) WHERE external_id IS NOT NULL`);
 
     logger.info("Startup migrations applied (schema)");
   } catch (e) {

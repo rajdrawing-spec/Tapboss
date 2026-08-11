@@ -7,7 +7,7 @@ import { z } from "zod/v4";
 import { requireSuperAdmin } from "../middleware/authz";
 import { canAccessCompany } from "../lib/company-scope";
 import {
-  encryptCredentials, metaListAdAccounts, runSyncForConnection,
+  encryptCredentials, metaListAdAccounts, googleListCustomers, runSyncForConnection,
 } from "../lib/ad-sync";
 
 /**
@@ -80,6 +80,56 @@ router.post("/ad-connections/meta", async (req, res) => {
     }
     res.status(201).json(publicConnection(conn));
   } catch (e) { req.log.error(e); res.status(500).json({ error: "Failed to connect Meta" }); }
+});
+
+const connectGoogleSchema = z.object({
+  companyId: z.number().int(),
+  developerToken: z.string().min(10),
+  clientId: z.string().min(10),
+  clientSecret: z.string().min(10),
+  refreshToken: z.string().min(10),
+  loginCustomerId: z.string().max(20).optional(), // manager (MCC) account id, digits or 123-456-7890
+  accountLabel: z.string().max(200).optional(),
+});
+
+/**
+ * Connect Google Ads by pasting API credentials (developer token + OAuth
+ * client + refresh token). Validated by listing accessible customer accounts
+ * before anything is stored.
+ */
+router.post("/ad-connections/google", async (req, res) => {
+  try {
+    const parsed = connectGoogleSchema.safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({ error: "Invalid input" }); return; }
+    if (!canAccessCompany(req, parsed.data.companyId)) { res.status(403).json({ error: "Forbidden" }); return; }
+    const { companyId, accountLabel, ...creds } = parsed.data;
+    let accounts;
+    try {
+      accounts = await googleListCustomers(creds);
+    } catch (e: any) {
+      res.status(400).json({ error: `Google rejected the credentials: ${e.message}` }); return;
+    }
+    if (accounts.length === 0) {
+      res.status(400).json({ error: "No readable Google Ads accounts found for these credentials. Check the refresh token's Google account and the login customer ID." }); return;
+    }
+    const user = (req as any).localUser;
+    const [conn] = await db.insert(adConnectionsTable).values({
+      companyId,
+      platform: "google",
+      status: "connected",
+      accountLabel: accountLabel ?? null,
+      credentialsEnc: encryptCredentials(creds),
+      scopes: "adwords",
+      connectedByUserId: user?.id ?? null,
+    }).returning();
+    for (const a of accounts) {
+      await db.insert(adAccountsTable).values({
+        connectionId: conn.id, companyId, platform: "google",
+        externalId: a.externalId, name: a.name, currency: a.currency,
+      }).onConflictDoNothing();
+    }
+    res.status(201).json(publicConnection(conn));
+  } catch (e) { req.log.error(e); res.status(500).json({ error: "Failed to connect Google Ads" }); }
 });
 
 router.patch("/ad-connections/:id/accounts/:accountId", async (req, res) => {

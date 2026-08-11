@@ -700,8 +700,11 @@ function AdConnectionsDialog({ companyId }: { companyId: number }) {
   const [open, setOpen] = React.useState(false)
   const qc = useQueryClient()
   const { toast } = useToast()
+  const [platform, setPlatform] = React.useState<"meta" | "google">("meta")
   const [token, setToken] = React.useState("")
   const [label, setLabel] = React.useState("")
+  const [g, setG] = React.useState({ developerToken: "", clientId: "", clientSecret: "", refreshToken: "", loginCustomerId: "", label: "" })
+  const setGField = (k: keyof typeof g) => (e: React.ChangeEvent<HTMLInputElement>) => setG((p) => ({ ...p, [k]: e.target.value }))
 
   const { data: connections, isLoading } = useQuery<AdConnection[]>({
     queryKey: ["/api/ad-connections"],
@@ -715,6 +718,24 @@ function AdConnectionsDialog({ companyId }: { companyId: number }) {
     onSuccess: () => { setToken(""); setLabel(""); invalidate(); toast({ title: "Meta connected", description: "Enable the ad accounts you want to sync, then run Sync Now." }) },
     onError: (e: Error) => toast({ title: "Failed to connect Meta", description: e.message, variant: "destructive" }),
   })
+  const connectGoogleMut = useMutation({
+    mutationFn: () => adminApi.post("/ad-connections/google", {
+      companyId,
+      developerToken: g.developerToken.trim(),
+      clientId: g.clientId.trim(),
+      clientSecret: g.clientSecret.trim(),
+      refreshToken: g.refreshToken.trim(),
+      loginCustomerId: g.loginCustomerId.trim() || undefined,
+      accountLabel: g.label || undefined,
+    }),
+    onSuccess: () => {
+      setG({ developerToken: "", clientId: "", clientSecret: "", refreshToken: "", loginCustomerId: "", label: "" })
+      invalidate()
+      toast({ title: "Google Ads connected", description: "Enable the accounts you want to sync, then run Sync Now." })
+    },
+    onError: (e: Error) => toast({ title: "Failed to connect Google Ads", description: e.message, variant: "destructive" }),
+  })
+  const googleReady = g.developerToken && g.clientId && g.clientSecret && g.refreshToken
   const toggleMut = useMutation({
     mutationFn: (v: { connectionId: number; accountId: number; syncEnabled: boolean }) =>
       adminApi.patch(`/ad-connections/${v.connectionId}/accounts/${v.accountId}`, { syncEnabled: v.syncEnabled }),
@@ -742,19 +763,50 @@ function AdConnectionsDialog({ companyId }: { companyId: number }) {
       <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
         <DialogHeader><DialogTitle>Ad platform connections</DialogTitle></DialogHeader>
         <p className="text-sm text-muted-foreground">
-          Connect Meta with a long-lived System User access token from your Meta app
-          (Business Settings → System Users → Generate token with <code>ads_read</code>).
           Metrics sync automatically at 08:00, 12:00, 16:00 and 20:00 IST.
         </p>
-        <div className="space-y-2 rounded-md border p-3">
-          <Label className="text-xs">Meta access token</Label>
-          <Input type="password" value={token} placeholder="EAAB…" onChange={(e) => setToken(e.target.value)} />
-          <Label className="text-xs">Label (optional)</Label>
-          <Input value={label} placeholder="e.g. LHO Business Manager" onChange={(e) => setLabel(e.target.value)} />
-          <Button size="sm" onClick={() => connectMut.mutate()} disabled={!token || connectMut.isPending}>
-            {connectMut.isPending ? "Connecting…" : "Connect Meta"}
-          </Button>
+        <div className="flex gap-1.5">
+          <Button variant={platform === "meta" ? "default" : "outline"} size="sm" onClick={() => setPlatform("meta")}>Meta</Button>
+          <Button variant={platform === "google" ? "default" : "outline"} size="sm" onClick={() => setPlatform("google")}>Google Ads</Button>
         </div>
+        {platform === "meta" ? (
+          <div className="space-y-2 rounded-md border p-3">
+            <p className="text-xs text-muted-foreground">
+              Use a long-lived System User access token from your Meta app
+              (Business Settings → System Users → Generate token with <code>ads_read</code>).
+            </p>
+            <Label className="text-xs">Meta access token</Label>
+            <Input type="password" value={token} placeholder="EAAB…" onChange={(e) => setToken(e.target.value)} />
+            <Label className="text-xs">Label (optional)</Label>
+            <Input value={label} placeholder="e.g. LHO Business Manager" onChange={(e) => setLabel(e.target.value)} />
+            <Button size="sm" onClick={() => connectMut.mutate()} disabled={!token || connectMut.isPending}>
+              {connectMut.isPending ? "Connecting…" : "Connect Meta"}
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-2 rounded-md border p-3">
+            <p className="text-xs text-muted-foreground">
+              Needs a Google Ads API developer token (API Center of your manager account),
+              an OAuth client ID/secret from Google Cloud Console, and a refresh token
+              authorized with the <code>adwords</code> scope.
+            </p>
+            <Label className="text-xs">Developer token</Label>
+            <Input type="password" value={g.developerToken} onChange={setGField("developerToken")} />
+            <Label className="text-xs">OAuth client ID</Label>
+            <Input value={g.clientId} placeholder="….apps.googleusercontent.com" onChange={setGField("clientId")} />
+            <Label className="text-xs">OAuth client secret</Label>
+            <Input type="password" value={g.clientSecret} onChange={setGField("clientSecret")} />
+            <Label className="text-xs">Refresh token</Label>
+            <Input type="password" value={g.refreshToken} onChange={setGField("refreshToken")} />
+            <Label className="text-xs">Manager (MCC) customer ID — optional</Label>
+            <Input value={g.loginCustomerId} placeholder="123-456-7890" onChange={setGField("loginCustomerId")} />
+            <Label className="text-xs">Label (optional)</Label>
+            <Input value={g.label} placeholder="e.g. LHO Google Ads" onChange={setGField("label")} />
+            <Button size="sm" onClick={() => connectGoogleMut.mutate()} disabled={!googleReady || connectGoogleMut.isPending}>
+              {connectGoogleMut.isPending ? "Connecting…" : "Connect Google Ads"}
+            </Button>
+          </div>
+        )}
         {isLoading ? (
           <p className="py-2 text-sm text-muted-foreground">Loading…</p>
         ) : companyConnections.length === 0 ? (
