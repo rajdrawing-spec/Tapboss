@@ -61,6 +61,28 @@ export const campaignDailyMetricsTable = pgTable("campaign_daily_metrics", {
   uniqueIndex("campaign_daily_metrics_uniq").on(t.campaignId, t.date, t.source),
 ]);
 
+/**
+ * One row per GA4 property per day — website analytics (not ad-attributed).
+ * Kept separate from campaign_daily_metrics because these are site-wide
+ * numbers with no campaign identity.
+ */
+export const siteDailyMetricsTable = pgTable("site_daily_metrics", {
+  id: serial("id").primaryKey(),
+  companyId: integer("company_id").notNull(),
+  propertyId: text("property_id").notNull(), // GA4 property id
+  date: text("date").notNull(), // YYYY-MM-DD
+  sessions: integer("sessions").notNull().default(0),
+  users: integer("users").notNull().default(0),
+  conversions: real("conversions").notNull().default(0), // GA4 key events
+  revenue: real("revenue").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (t) => [
+  // company_id is part of the key: the same GA4 property connected to two
+  // companies must never share (and overwrite) one row across tenants.
+  uniqueIndex("site_daily_metrics_uniq").on(t.companyId, t.propertyId, t.date),
+]);
+
 export const syncJobsTable = pgTable("sync_jobs", {
   id: serial("id").primaryKey(),
   connectionId: integer("connection_id").notNull(),

@@ -888,6 +888,29 @@ export async function applyMigrations(): Promise<void> {
       )
     `);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS marketing_reports_project_idx ON marketing_reports(project_id, status)`);
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS site_daily_metrics (
+        id          SERIAL PRIMARY KEY,
+        company_id  INTEGER NOT NULL,
+        property_id TEXT    NOT NULL,
+        date        TEXT    NOT NULL,
+        sessions    INTEGER NOT NULL DEFAULT 0,
+        users       INTEGER NOT NULL DEFAULT 0,
+        conversions REAL    NOT NULL DEFAULT 0,
+        revenue     REAL    NOT NULL DEFAULT 0,
+        created_at  TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at  TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    // Tenant boundary: key includes company_id so one property connected to
+    // two companies can never overwrite the other tenant's rows.
+    await db.execute(sql`DROP INDEX IF EXISTS site_daily_metrics_uniq`);
+    await db.execute(sql`
+      DELETE FROM site_daily_metrics a USING site_daily_metrics b
+      WHERE a.id < b.id AND a.company_id = b.company_id AND a.property_id = b.property_id AND a.date = b.date
+    `);
+    await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS site_daily_metrics_uniq ON site_daily_metrics(company_id, property_id, date)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS site_daily_metrics_company_date_idx ON site_daily_metrics(company_id, date)`);
     await db.execute(sql`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS external_id TEXT`);
     await db.execute(sql`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS ad_account_id INTEGER`);
     // Identity is (company, channel, external_id) — platform campaign IDs are

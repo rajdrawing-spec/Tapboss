@@ -10,9 +10,10 @@
  * integration credential store); tokens never reach the frontend.
  */
 import { schedule } from "node-cron";
+import { createSign } from "node:crypto";
 import {
   db, adConnectionsTable, adAccountsTable, campaignsTable,
-  campaignDailyMetricsTable, syncJobsTable, syncLogsTable,
+  campaignDailyMetricsTable, siteDailyMetricsTable, syncJobsTable, syncLogsTable,
 } from "@workspace/db";
 import { eq, and, sql } from "drizzle-orm";
 import { encryptValue, decryptValue } from "./credential-store";
@@ -24,6 +25,8 @@ export interface AdCredentials {
   accessToken?: string; refreshToken?: string; expiresAt?: string;
   // Google Ads
   developerToken?: string; clientId?: string; clientSecret?: string; loginCustomerId?: string;
+  // GA4 (service account JSON, stored verbatim)
+  serviceAccountJson?: string;
 }
 
 export function encryptCredentials(creds: AdCredentials): string {
@@ -263,6 +266,140 @@ async function runGoogleSync(connectionId: number, trigger: "scheduled" | "manua
   }
 }
 
+/* ------------------------------ GA4 client ------------------------------ */
+
+const GA4_DATA_API = "https://analyticsdata.googleapis.com/v1beta";
+
+/** YYYY-MM-DD in Asia/Kolkata — the app's reporting timezone. */
+const istDate = (d: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(d);
+
+/** Get an access token for a GA4 service account (self-signed JWT flow). */
+async function ga4AccessToken(serviceAccountJson: string): Promise<string> {
+  let sa: any;
+  try { sa = JSON.parse(serviceAccountJson); } catch { throw new Error("Invalid service account JSON"); }
+  if (!sa.client_email || !sa.private_key) throw new Error("Service account JSON must contain client_email and private_key");
+
+  const now = Math.floor(Date.now() / 1000);
+  const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64url");
+  const unsigned = `${b64({ alg: "RS256", typ: "JWT" })}.${b64({
+    iss: sa.client_email,
+    scope: "https://www.googleapis.com/auth/analytics.readonly",
+    aud: "https://oauth2.googleapis.com/token",
+    iat: now,
+    exp: now + 3600,
+  })}`;
+  const signer = createSign("RSA-SHA256");
+  signer.update(unsigned);
+  const jwt = `${unsigned}.${signer.sign(sa.private_key, "base64url")}`;
+
+  const res = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: jwt }),
+  });
+  const body: any = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = new Error(body?.error_description || body?.error || `Google OAuth error (HTTP ${res.status})`);
+    (err as any).googleAuthError = body?.error;
+    throw err;
+  }
+  return body.access_token as string;
+}
+
+/** Validate GA4 credentials + property access (used at connect time). */
+export async function ga4ValidateProperty(serviceAccountJson: string, propertyId: string): Promise<{ externalId: string; name: string }> {
+  const pid = digitsOnly(propertyId);
+  if (!pid) throw new Error("Property ID must be numeric (e.g. 123456789)");
+  const token = await ga4AccessToken(serviceAccountJson);
+  const res = await fetch(`${GA4_DATA_API}/properties/${pid}/metadata`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const body: any = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body?.error?.message || `GA4 API error (HTTP ${res.status}) — is the service account added as a Viewer on the property?`);
+  return { externalId: pid, name: `GA4 property ${pid}` };
+}
+
+/** Sync one GA4 connection: last N days of daily site metrics per property. */
+async function runGa4Sync(connectionId: number, trigger: "scheduled" | "manual", days = 30): Promise<{ jobId: number; status: string; rows: number }> {
+  const [conn] = await db.select().from(adConnectionsTable).where(eq(adConnectionsTable.id, connectionId));
+  if (!conn) throw new Error("Connection not found");
+  const [job] = await db.insert(syncJobsTable).values({
+    connectionId, companyId: conn.companyId, platform: conn.platform, trigger, status: "running",
+  }).returning();
+
+  let rows = 0;
+  let failedAccounts = 0;
+  try {
+    const creds = decryptCredentials(conn.credentialsEnc);
+    let token: string;
+    try {
+      token = await ga4AccessToken(creds.serviceAccountJson ?? "");
+    } catch (e: any) {
+      if (e.googleAuthError === "invalid_grant" || e.googleAuthError === "invalid_client") {
+        await db.update(adConnectionsTable)
+          .set({ status: "expired", lastError: "Service account rejected by Google — reconnect GA4.", updatedAt: new Date() })
+          .where(eq(adConnectionsTable.id, connectionId));
+      }
+      throw e;
+    }
+
+    const properties = await db.select().from(adAccountsTable)
+      .where(and(eq(adAccountsTable.connectionId, connectionId), eq(adAccountsTable.syncEnabled, true)));
+    if (properties.length === 0) await log(job.id, "warn", "No sync-enabled GA4 properties on this connection");
+
+    for (const prop of properties) {
+      try {
+        const res = await fetch(`${GA4_DATA_API}/properties/${prop.externalId}:runReport`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            // Explicit IST calendar dates — the app's documented reporting
+            // timezone (scheduler + dashboards use Asia/Kolkata), avoiding
+            // relative-date drift around midnight.
+            dateRanges: [{ startDate: istDate(new Date(Date.now() - (days - 1) * 86400000)), endDate: istDate(new Date()) }],
+            dimensions: [{ name: "date" }],
+            metrics: [{ name: "sessions" }, { name: "totalUsers" }, { name: "keyEvents" }, { name: "totalRevenue" }],
+            limit: 100000,
+          }),
+        });
+        const body: any = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body?.error?.message || `GA4 API error (HTTP ${res.status})`);
+        for (const r of body.rows ?? []) {
+          const raw = r.dimensionValues?.[0]?.value ?? ""; // YYYYMMDD
+          if (raw.length !== 8) continue;
+          const date = `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`;
+          const mv = (i: number) => Number(r.metricValues?.[i]?.value) || 0;
+          await db.insert(siteDailyMetricsTable).values({
+            companyId: conn.companyId, propertyId: prop.externalId, date,
+            sessions: Math.round(mv(0)), users: Math.round(mv(1)), conversions: mv(2), revenue: mv(3),
+          }).onConflictDoUpdate({
+            target: [siteDailyMetricsTable.companyId, siteDailyMetricsTable.propertyId, siteDailyMetricsTable.date],
+            set: { sessions: Math.round(mv(0)), users: Math.round(mv(1)), conversions: mv(2), revenue: mv(3), updatedAt: new Date() },
+          });
+          rows += 1;
+        }
+        await log(job.id, "info", `Synced GA4 property ${prop.externalId}`);
+      } catch (e: any) {
+        failedAccounts += 1;
+        await log(job.id, "error", `Property ${prop.externalId} failed: ${e.message}`);
+      }
+    }
+
+    const status = failedAccounts > 0 ? "partial" : "success";
+    await db.update(syncJobsTable).set({ status, finishedAt: new Date(), rowsUpserted: rows }).where(eq(syncJobsTable.id, job.id));
+    await db.update(adConnectionsTable)
+      .set({ lastSyncedAt: new Date(), lastError: failedAccounts > 0 ? "Some properties failed — see sync logs." : null, status: "connected", updatedAt: new Date() })
+      .where(eq(adConnectionsTable.id, connectionId));
+    return { jobId: job.id, status, rows };
+  } catch (e: any) {
+    await db.update(syncJobsTable).set({ status: "failed", finishedAt: new Date(), rowsUpserted: rows, error: e.message }).where(eq(syncJobsTable.id, job.id));
+    await db.update(adConnectionsTable)
+      .set({ lastError: e.message, updatedAt: new Date() })
+      .where(eq(adConnectionsTable.id, connectionId));
+    throw e;
+  }
+}
+
 /* ------------------------------ sync core ------------------------------ */
 
 async function log(jobId: number, level: string, message: string, detail?: unknown) {
@@ -431,6 +568,7 @@ export async function runSyncForConnection(connectionId: number, trigger: "sched
   if (!conn) throw new Error("Connection not found");
   if (conn.platform === "meta") return runMetaSync(connectionId, trigger);
   if (conn.platform === "google") return runGoogleSync(connectionId, trigger);
+  if (conn.platform === "ga4") return runGa4Sync(connectionId, trigger);
   throw new Error(`Sync for platform "${conn.platform}" is not implemented yet`);
 }
 

@@ -7,7 +7,7 @@ import { z } from "zod/v4";
 import { requireSuperAdmin } from "../middleware/authz";
 import { canAccessCompany } from "../lib/company-scope";
 import {
-  encryptCredentials, metaListAdAccounts, googleListCustomers, runSyncForConnection,
+  encryptCredentials, metaListAdAccounts, googleListCustomers, ga4ValidateProperty, runSyncForConnection,
 } from "../lib/ad-sync";
 
 /**
@@ -130,6 +130,46 @@ router.post("/ad-connections/google", async (req, res) => {
     }
     res.status(201).json(publicConnection(conn));
   } catch (e) { req.log.error(e); res.status(500).json({ error: "Failed to connect Google Ads" }); }
+});
+
+const connectGa4Schema = z.object({
+  companyId: z.number().int(),
+  serviceAccountJson: z.string().min(50),
+  propertyId: z.string().min(4).max(20),
+  accountLabel: z.string().max(200).optional(),
+});
+
+/**
+ * Connect GA4 with a service account JSON (added as Viewer on the property)
+ * plus the numeric property ID. Validated with a metadata call before storing.
+ */
+router.post("/ad-connections/ga4", async (req, res) => {
+  try {
+    const parsed = connectGa4Schema.safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({ error: "Invalid input" }); return; }
+    if (!canAccessCompany(req, parsed.data.companyId)) { res.status(403).json({ error: "Forbidden" }); return; }
+    let property;
+    try {
+      property = await ga4ValidateProperty(parsed.data.serviceAccountJson, parsed.data.propertyId);
+    } catch (e: any) {
+      res.status(400).json({ error: `GA4 rejected the credentials: ${e.message}` }); return;
+    }
+    const user = (req as any).localUser;
+    const [conn] = await db.insert(adConnectionsTable).values({
+      companyId: parsed.data.companyId,
+      platform: "ga4",
+      status: "connected",
+      accountLabel: parsed.data.accountLabel ?? null,
+      credentialsEnc: encryptCredentials({ serviceAccountJson: parsed.data.serviceAccountJson }),
+      scopes: "analytics.readonly",
+      connectedByUserId: user?.id ?? null,
+    }).returning();
+    await db.insert(adAccountsTable).values({
+      connectionId: conn.id, companyId: parsed.data.companyId, platform: "ga4",
+      externalId: property.externalId, name: property.name, currency: null,
+    }).onConflictDoNothing();
+    res.status(201).json(publicConnection(conn));
+  } catch (e) { req.log.error(e); res.status(500).json({ error: "Failed to connect GA4" }); }
 });
 
 router.patch("/ad-connections/:id/accounts/:accountId", async (req, res) => {

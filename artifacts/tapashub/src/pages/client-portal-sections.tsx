@@ -132,7 +132,7 @@ interface Overview {
   kpis: { revenue?: number; orders?: number; leads?: number; conversionRate?: number | null; aov?: number }
   campaignLifetime: { adSpend?: number; roas?: number | null; cpl?: number | null; cpa?: number | null }
   comparison: { revenue?: number | null; orders?: number | null; leads?: number | null }
-  timeseries: { period: string; revenue?: number; orders?: number; leads?: number; spend?: number; roas?: number | null; conversions?: number }[]
+  timeseries: { period: string; revenue?: number; orders?: number; leads?: number; spend?: number; roas?: number | null; conversions?: number; sessions?: number; users?: number }[]
 }
 
 export function OverviewSection({ projectId }: { projectId: number }) {
@@ -168,6 +168,7 @@ export function OverviewSection({ projectId }: { projectId: number }) {
   const hasSpend = data.timeseries.some((t) => t.spend !== undefined)
   const hasRoas = data.timeseries.some((t) => t.roas !== undefined)
   const hasConversions = data.timeseries.some((t) => t.conversions !== undefined)
+  const hasSessions = data.timeseries.some((t) => t.sessions !== undefined)
 
   return (
     <div className="space-y-6">
@@ -215,6 +216,8 @@ export function OverviewSection({ projectId }: { projectId: number }) {
                 {hasOrders && <Line yAxisId="count" dataKey="orders" name="Orders" stroke="#3b82f6" strokeWidth={2} dot={false} />}
                 {hasLeads && <Line yAxisId="count" dataKey="leads" name="Leads" stroke="#a855f7" strokeWidth={2} dot={false} />}
                 {hasConversions && <Line yAxisId="count" dataKey="conversions" name="Conversions" stroke="#ec4899" strokeWidth={2} dot={false} />}
+                {hasSessions && <Line yAxisId="count" dataKey="sessions" name="Sessions" stroke="#06b6d4" strokeWidth={2} dot={false} />}
+                {hasSessions && <Line yAxisId="count" dataKey="users" name="Users" stroke="#8b5cf6" strokeWidth={2} dot={false} strokeDasharray="4 3" />}
               </ComposedChart>
             </ResponsiveContainer>
           </div>

@@ -3,7 +3,7 @@ import type { User } from "@workspace/db";
 import {
   db, marketingProjectsTable, marketingProjectMembersTable,
   campaignsTable, campaignCreativesTable, campaignLeadsTable,
-  clientAiPlansTable, marketingReportsTable,
+  clientAiPlansTable, marketingReportsTable, siteDailyMetricsTable,
 } from "@workspace/db";
 import { eq, and, inArray, desc, gte, lte } from "drizzle-orm";
 import { requirePermission } from "../middleware/authz";
@@ -139,15 +139,27 @@ router.get("/client/marketing/projects/:projectId/overview", requireProjectAcces
     // spend/conversions trend lines when available.
     const dailyRows = await fetchDailyMetrics(campaigns.map((c) => c.id), range.from, range.to);
 
+    // GA4 website analytics (site-wide, not ad-attributed) — separate table.
+    const dstr = (d: Date) => d.toISOString().slice(0, 10);
+    const siteRows = vis.analytics
+      ? await db.select().from(siteDailyMetricsTable).where(and(
+          eq(siteDailyMetricsTable.companyId, project.companyId),
+          gte(siteDailyMetricsTable.date, dstr(range.from)),
+          lte(siteDailyMetricsTable.date, dstr(range.to)),
+        ))
+      : [];
+
     // Timeseries: orders revenue/count + leads + daily spend/conversions per bucket.
     // adRevenue is the platform-attributed revenue from daily metrics — ROAS is
     // computed ONLY from aligned daily spend + daily ad revenue (mixing in
     // whole-company order revenue would overstate it).
-    const buckets = new Map<string, { period: string; revenue: number; orders: number; leads: number; spend: number; conversions: number; adRevenue: number }>();
-    const bump = (key: string, patch: Partial<{ revenue: number; orders: number; leads: number; spend: number; conversions: number; adRevenue: number }>) => {
-      const b = buckets.get(key) ?? { period: key, revenue: 0, orders: 0, leads: 0, spend: 0, conversions: 0, adRevenue: 0 };
+    type Bucket = { period: string; revenue: number; orders: number; leads: number; spend: number; conversions: number; adRevenue: number; sessions: number; users: number };
+    const buckets = new Map<string, Bucket>();
+    const bump = (key: string, patch: Partial<Omit<Bucket, "period">>) => {
+      const b = buckets.get(key) ?? { period: key, revenue: 0, orders: 0, leads: 0, spend: 0, conversions: 0, adRevenue: 0, sessions: 0, users: 0 };
       b.revenue += patch.revenue ?? 0; b.orders += patch.orders ?? 0; b.leads += patch.leads ?? 0;
       b.spend += patch.spend ?? 0; b.conversions += patch.conversions ?? 0; b.adRevenue += patch.adRevenue ?? 0;
+      b.sessions += patch.sessions ?? 0; b.users += patch.users ?? 0;
       buckets.set(key, b);
     };
     for (const o of orders) {
@@ -162,8 +174,12 @@ router.get("/client/marketing/projects/:projectId/overview", requireProjectAcces
         adRevenue: Number(m.revenue) || 0,
       });
     }
+    for (const s of siteRows) {
+      bump(bucketKey(new Date(`${s.date}T12:00:00`), group), { sessions: Number(s.sessions) || 0, users: Number(s.users) || 0 });
+    }
     const hasDailySpend = dailyRows.some((m) => Number(m.spend) > 0);
     const hasDailyConversions = dailyRows.some((m) => Number(m.conversions) > 0);
+    const hasSiteData = siteRows.length > 0;
 
     // Enforce visibility toggles server-side: hidden KPIs are REMOVED from
     // the payload, not merely hidden in the UI.
@@ -205,6 +221,7 @@ router.get("/client/marketing/projects/:projectId/overview", requireProjectAcces
           ...(vis.adSpend && hasDailySpend ? { spend: b.spend } : {}),
           ...(vis.roas && hasDailySpend ? { roas: b.spend > 0 ? b.adRevenue / b.spend : null } : {}),
           ...(vis.conversion && hasDailyConversions ? { conversions: b.conversions } : {}),
+          ...(vis.analytics && hasSiteData ? { sessions: b.sessions, users: b.users } : {}),
         })),
     });
   } catch (e) { req.log.error(e); res.status(500).json({ error: "Failed to load overview" }); }

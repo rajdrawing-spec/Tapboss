@@ -371,6 +371,7 @@ const VISIBILITY_FIELDS: { key: string; label: string }[] = [
   { key: "campaigns", label: "Campaigns" },
   { key: "creatives", label: "Creative Library" },
   { key: "reports", label: "Reports" },
+  { key: "analytics", label: "Website Analytics (GA4)" },
   { key: "ai", label: "AI Plan" },
   { key: "aiRequiresReview", label: "AI plans need internal approval" },
 ]
@@ -700,7 +701,7 @@ function AdConnectionsDialog({ companyId }: { companyId: number }) {
   const [open, setOpen] = React.useState(false)
   const qc = useQueryClient()
   const { toast } = useToast()
-  const [platform, setPlatform] = React.useState<"meta" | "google">("meta")
+  const [platform, setPlatform] = React.useState<"meta" | "google" | "ga4">("meta")
   const [token, setToken] = React.useState("")
   const [label, setLabel] = React.useState("")
   const [g, setG] = React.useState({ developerToken: "", clientId: "", clientSecret: "", refreshToken: "", loginCustomerId: "", label: "" })
@@ -736,6 +737,21 @@ function AdConnectionsDialog({ companyId }: { companyId: number }) {
     onError: (e: Error) => toast({ title: "Failed to connect Google Ads", description: e.message, variant: "destructive" }),
   })
   const googleReady = g.developerToken && g.clientId && g.clientSecret && g.refreshToken
+  const [ga4, setGa4] = React.useState({ serviceAccountJson: "", propertyId: "", label: "" })
+  const connectGa4Mut = useMutation({
+    mutationFn: () => adminApi.post("/ad-connections/ga4", {
+      companyId,
+      serviceAccountJson: ga4.serviceAccountJson.trim(),
+      propertyId: ga4.propertyId.trim(),
+      accountLabel: ga4.label || undefined,
+    }),
+    onSuccess: () => {
+      setGa4({ serviceAccountJson: "", propertyId: "", label: "" })
+      invalidate()
+      toast({ title: "GA4 connected", description: "Website analytics will sync on the regular schedule, or run Sync Now." })
+    },
+    onError: (e: Error) => toast({ title: "Failed to connect GA4", description: e.message, variant: "destructive" }),
+  })
   const toggleMut = useMutation({
     mutationFn: (v: { connectionId: number; accountId: number; syncEnabled: boolean }) =>
       adminApi.patch(`/ad-connections/${v.connectionId}/accounts/${v.accountId}`, { syncEnabled: v.syncEnabled }),
@@ -768,8 +784,31 @@ function AdConnectionsDialog({ companyId }: { companyId: number }) {
         <div className="flex gap-1.5">
           <Button variant={platform === "meta" ? "default" : "outline"} size="sm" onClick={() => setPlatform("meta")}>Meta</Button>
           <Button variant={platform === "google" ? "default" : "outline"} size="sm" onClick={() => setPlatform("google")}>Google Ads</Button>
+          <Button variant={platform === "ga4" ? "default" : "outline"} size="sm" onClick={() => setPlatform("ga4")}>GA4</Button>
         </div>
-        {platform === "meta" ? (
+        {platform === "ga4" ? (
+          <div className="space-y-2 rounded-md border p-3">
+            <p className="text-xs text-muted-foreground">
+              Create a service account in Google Cloud Console, enable the Google Analytics
+              Data API, add the service account email as a <strong>Viewer</strong> on the GA4
+              property, then paste its JSON key and the numeric property ID here.
+            </p>
+            <Label className="text-xs">Service account JSON key</Label>
+            <textarea
+              className="min-h-[90px] w-full rounded-md border bg-background px-3 py-2 font-mono text-xs"
+              value={ga4.serviceAccountJson}
+              placeholder='{"type":"service_account", …}'
+              onChange={(e) => setGa4((p) => ({ ...p, serviceAccountJson: e.target.value }))}
+            />
+            <Label className="text-xs">GA4 property ID</Label>
+            <Input value={ga4.propertyId} placeholder="123456789" onChange={(e) => setGa4((p) => ({ ...p, propertyId: e.target.value }))} />
+            <Label className="text-xs">Label (optional)</Label>
+            <Input value={ga4.label} placeholder="e.g. LHO website" onChange={(e) => setGa4((p) => ({ ...p, label: e.target.value }))} />
+            <Button size="sm" onClick={() => connectGa4Mut.mutate()} disabled={!ga4.serviceAccountJson || !ga4.propertyId || connectGa4Mut.isPending}>
+              {connectGa4Mut.isPending ? "Connecting…" : "Connect GA4"}
+            </Button>
+          </div>
+        ) : platform === "meta" ? (
           <div className="space-y-2 rounded-md border p-3">
             <p className="text-xs text-muted-foreground">
               Use a long-lived System User access token from your Meta app

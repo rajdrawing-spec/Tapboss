@@ -24,6 +24,8 @@ export interface ClientVisibilitySettings {
   creatives: boolean;
   reports: boolean;
   ai: boolean;
+  /** GA4 website analytics (sessions/users) in the client portal. */
+  analytics: boolean;
   /** When true, client-generated AI plans need internal approval before the client sees them. */
   aiRequiresReview: boolean;
 }
@@ -31,7 +33,7 @@ export interface ClientVisibilitySettings {
 export const DEFAULT_CLIENT_VISIBILITY: ClientVisibilitySettings = {
   revenue: true, orders: true, adSpend: true, roas: true, leads: true,
   cpa: true, conversion: true, campaigns: true, creatives: true,
-  reports: true, ai: true, aiRequiresReview: false,
+  reports: true, ai: true, analytics: true, aiRequiresReview: false,
 };
 
 export const clientVisibilitySettingsTable = pgTable("client_visibility_settings", {

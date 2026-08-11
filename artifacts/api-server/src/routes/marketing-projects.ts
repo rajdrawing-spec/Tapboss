@@ -201,7 +201,8 @@ const visibilitySchema = z.object({
   revenue: z.boolean(), orders: z.boolean(), adSpend: z.boolean(),
   roas: z.boolean(), leads: z.boolean(), cpa: z.boolean(),
   conversion: z.boolean(), campaigns: z.boolean(), creatives: z.boolean(),
-  reports: z.boolean(), ai: z.boolean(), aiRequiresReview: z.boolean(),
+  reports: z.boolean(), ai: z.boolean(), analytics: z.boolean().default(true),
+  aiRequiresReview: z.boolean(),
 });
 
 router.get("/marketing-projects/:id/visibility", async (req, res) => {
