@@ -1125,4 +1125,41 @@ export async function repairOrphanedAllocations(): Promise<void> {
   `);
 
   logger.info("Invoice & Billing tables ensured");
+
+  // ── Multi-company: unified Clients & Vendors directory ─────────────────────
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS client_vendors (
+      id                SERIAL PRIMARY KEY,
+      company_id        INTEGER NOT NULL,
+      type              TEXT    NOT NULL,
+      name              TEXT    NOT NULL,
+      organization_name TEXT,
+      contact_person    TEXT,
+      email             TEXT,
+      phone             TEXT,
+      whatsapp          TEXT,
+      website           TEXT,
+      address           TEXT,
+      notes             TEXT,
+      status            TEXT    NOT NULL DEFAULT 'active',
+      custom_fields     JSONB,
+      created_at        TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at        TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS client_vendors_company_idx ON client_vendors(company_id)`);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS client_vendors_type_idx ON client_vendors(type)`);
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS user_client_vendor_access (
+      id               SERIAL PRIMARY KEY,
+      user_id          INTEGER NOT NULL,
+      client_vendor_id INTEGER NOT NULL,
+      created_at       TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+  await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS user_cv_access_unique ON user_client_vendor_access(user_id, client_vendor_id)`);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS user_cv_access_user_idx ON user_client_vendor_access(user_id)`);
+  await db.execute(sql`ALTER TABLE documents ADD COLUMN IF NOT EXISTS client_vendor_id INTEGER`);
+  await db.execute(sql`ALTER TABLE generated_tasks ADD COLUMN IF NOT EXISTS client_vendor_id INTEGER`);
+  logger.info("Clients & Vendors tables ensured");
 }

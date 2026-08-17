@@ -12,10 +12,12 @@ import { useToast } from "@/hooks/use-toast"
 import { useUpload } from "@workspace/object-storage-web"
 
 interface Doc {
-  id: number; companyId: number | null; name: string; category: string; issuer: string | null
+  id: number; companyId: number | null; clientVendorId: number | null; name: string; category: string; issuer: string | null
   referenceNumber: string | null; expiresAt: string | null; owner: string | null; notes: string | null
   fileUrl: string | null; fileType: string | null
 }
+
+interface CvOption { id: number; type: string; name: string }
 
 // Object-storage paths are served through the API; external URLs render as-is.
 function fileHref(url?: string | null): string | undefined {
@@ -53,8 +55,8 @@ const CAT_COLORS: Record<string, string> = {
 }
 const catLabel = (v: string) => CATEGORIES.find((c) => c.v === v)?.l ?? v
 
-interface Form { name: string; category: string; issuer: string; referenceNumber: string; expiresAt: string; owner: string; notes: string; fileUrl: string; fileType: string }
-const emptyForm = (): Form => ({ name: "", category: "gst", issuer: "", referenceNumber: "", expiresAt: "", owner: "", notes: "", fileUrl: "", fileType: "" })
+interface Form { name: string; category: string; issuer: string; referenceNumber: string; expiresAt: string; owner: string; notes: string; fileUrl: string; fileType: string; clientVendorId: string }
+const emptyForm = (): Form => ({ name: "", category: "gst", issuer: "", referenceNumber: "", expiresAt: "", owner: "", notes: "", fileUrl: "", fileType: "", clientVendorId: "none" })
 
 const FILE_TYPE_LABEL: Record<string, string> = { pdf: "PDF", image: "Image", doc: "Doc", sheet: "Sheet", link: "Link", other: "File" }
 
@@ -72,6 +74,19 @@ export default function Documents() {
   const [detail, setDetail] = React.useState<Doc | null>(null)
   const [attachMode, setAttachMode] = React.useState<"upload" | "url">("upload")
 
+  const [cvFilter, setCvFilter] = React.useState("all")
+  const [cvOptions, setCvOptions] = React.useState<CvOption[]>([])
+
+  // Client/vendor options for association + filtering (best-effort; hidden when unavailable)
+  React.useEffect(() => {
+    const p = new URLSearchParams({ pageSize: "100", status: "active" })
+    if (activeCompany) p.set("companyId", String(activeCompany.id))
+    fetch(`/api/client-vendors?${p}`, { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setCvOptions(d?.items?.map((x: any) => ({ id: x.id, type: x.type, name: x.name })) ?? []))
+      .catch(() => setCvOptions([]))
+  }, [activeCompany])
+
   const { uploadFile, isUploading } = useUpload({
     onError: (e) => toast({ title: "Upload failed", description: e.message, variant: "destructive" }),
   })
@@ -83,18 +98,19 @@ export default function Documents() {
       if (activeCompany) p.set("companyId", String(activeCompany.id))
       if (catFilter !== "all") p.set("category", catFilter)
       if (search.trim()) p.set("q", search.trim())
+      if (cvFilter !== "all") p.set("clientVendorId", cvFilter)
       const res = await fetch(`/api/documents?${p}`, { credentials: "include" })
       setRows(await res.json())
     } catch { toast({ title: "Failed to load documents", variant: "destructive" }) }
     finally { setLoading(false) }
-  }, [activeCompany, catFilter, search, toast])
+  }, [activeCompany, catFilter, search, cvFilter, toast])
 
   React.useEffect(() => { const t = setTimeout(load, 200); return () => clearTimeout(t) }, [load])
 
   function openAdd() { setEditing(null); setForm(emptyForm()); setAttachMode("upload"); setShowDialog(true) }
   function openEdit(d: Doc) {
     setEditing(d)
-    setForm({ name: d.name, category: d.category, issuer: d.issuer ?? "", referenceNumber: d.referenceNumber ?? "", expiresAt: d.expiresAt ? d.expiresAt.slice(0, 10) : "", owner: d.owner ?? "", notes: d.notes ?? "", fileUrl: d.fileUrl ?? "", fileType: d.fileType ?? "" })
+    setForm({ name: d.name, category: d.category, issuer: d.issuer ?? "", referenceNumber: d.referenceNumber ?? "", expiresAt: d.expiresAt ? d.expiresAt.slice(0, 10) : "", owner: d.owner ?? "", notes: d.notes ?? "", fileUrl: d.fileUrl ?? "", fileType: d.fileType ?? "", clientVendorId: d.clientVendorId != null ? String(d.clientVendorId) : "none" })
     setAttachMode(d.fileUrl && !d.fileUrl.startsWith("/objects") ? "url" : "upload")
     setShowDialog(true)
   }
@@ -112,6 +128,7 @@ export default function Documents() {
       const fileUrl = form.fileUrl.trim() || null
       const body: any = {
         ...form,
+        clientVendorId: form.clientVendorId !== "none" ? parseInt(form.clientVendorId) : null,
         companyId: activeCompany?.id ?? null,
         expiresAt: form.expiresAt || null,
         fileUrl,
@@ -152,6 +169,15 @@ export default function Documents() {
           <SelectTrigger className="w-full sm:w-48"><SelectValue /></SelectTrigger>
           <SelectContent><SelectItem value="all">All categories</SelectItem>{CATEGORIES.map((c) => <SelectItem key={c.v} value={c.v}>{c.l}</SelectItem>)}</SelectContent>
         </Select>
+        {cvOptions.length > 0 && (
+          <Select value={cvFilter} onValueChange={setCvFilter}>
+            <SelectTrigger className="w-full sm:w-56" data-testid="select-cv-filter"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All clients & vendors</SelectItem>
+              {cvOptions.map((o) => <SelectItem key={o.id} value={String(o.id)}>{o.type === "client" ? "Client" : "Vendor"}: {o.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        )}
       </div>
 
       {loading ? (
@@ -218,6 +244,17 @@ export default function Documents() {
             <div><Label>Expires At</Label><Input type="date" value={form.expiresAt} onChange={(e) => setForm({ ...form, expiresAt: e.target.value })} /></div>
             <div><Label>Owner</Label><Input value={form.owner} onChange={(e) => setForm({ ...form, owner: e.target.value })} /></div>
             <div className="col-span-2"><Label>Notes</Label><Input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></div>
+            {cvOptions.length > 0 && (
+              <div className="col-span-2"><Label>Linked Client / Vendor</Label>
+                <Select value={form.clientVendorId} onValueChange={(v) => setForm({ ...form, clientVendorId: v })}>
+                  <SelectTrigger data-testid="select-doc-cv"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    {cvOptions.map((o) => <SelectItem key={o.id} value={String(o.id)}>{o.type === "client" ? "Client" : "Vendor"}: {o.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             <div className="col-span-2 space-y-2 rounded-lg border p-3">
               <div className="flex items-center justify-between">

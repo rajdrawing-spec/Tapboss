@@ -39,6 +39,7 @@ const DirectorPortal = React.lazy(() => import('@/pages/director'));
 const AccountDirectory = React.lazy(() => import('@/pages/account-directory'));
 const Shipping = React.lazy(() => import('@/pages/shipping'));
 const Documents = React.lazy(() => import('@/pages/documents'));
+const ClientsVendors = React.lazy(() => import('@/pages/clients-vendors'));
 const Marketing = React.lazy(() => import('@/pages/marketing'));
 const AccessControl = React.lazy(() => import('@/pages/admin/access-control'));
 const AuditLogs = React.lazy(() => import('@/pages/admin/audit-logs'));
@@ -266,6 +267,7 @@ function AuthedApp() {
                   <Route path="/accounts" component={AccountDirectory} />
                   <Route path="/shipping" component={Shipping} />
                   <Route path="/documents" component={Documents} />
+                  <Route path="/clients-vendors" component={ClientsVendors} />
                   <Route path="/marketing" component={Marketing} />
                   <Route path="/admin/access" component={AccessControl} />
                   <Route path="/admin/audit" component={AuditLogs} />

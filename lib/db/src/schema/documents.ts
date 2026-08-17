@@ -5,6 +5,7 @@ import { z } from "zod/v4";
 export const documentsTable = pgTable("documents", {
   id: serial("id").primaryKey(),
   companyId: integer("company_id"),
+  clientVendorId: integer("client_vendor_id"), // optional link to client_vendors
   name: text("name").notNull(),
   category: text("category").notNull().default("other"), // gst|trademark|invoice|vendor_agreement|brand_asset|certificate|other
   fileUrl: text("file_url"),

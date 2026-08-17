@@ -24,6 +24,8 @@ import request from "supertest";
 const H = vi.hoisted(() => {
   type Row = Record<string, any>;
   const TABLES = [
+    "user_client_vendor_access",
+    "client_vendors",
     "shareholders",
     "share_transactions",
     "companies",
@@ -175,6 +177,8 @@ vi.mock("@workspace/db", () => ({
   shareTransactionsTable: H.tables.share_transactions,
   companiesTable: H.tables.companies,
   documentsTable: H.tables.documents,
+  userClientVendorAccessTable: H.tables.user_client_vendor_access,
+  clientVendorsTable: H.tables.client_vendors,
   shipmentsTable: H.tables.shipments,
   campaignsTable: H.tables.campaigns,
   campaignCreativesTable: H.tables.campaign_creatives,
@@ -210,6 +214,12 @@ vi.mock("@clerk/express", () => ({
 // Side-effecting helpers hit by the write paths only — no-op them.
 vi.mock("../lib/notify", () => ({ emitNotification: vi.fn() }));
 vi.mock("../lib/audit", () => ({ writeAudit: vi.fn() }));
+// Permission resolution hits the roles table; this suite tests tenancy, not RBAC.
+vi.mock("../middleware/authz", () => ({
+  requirePermission: () => (_req: any, _res: any, next: any) => next(),
+  requireSuperAdmin: (req: any, res: any, next: any) =>
+    req.localUser?.role === "super_admin" ? next() : res.status(403).json({ error: "Forbidden" }),
+}));
 
 import shareholdersRouter from "./shareholders";
 import documentsRouter from "./documents";

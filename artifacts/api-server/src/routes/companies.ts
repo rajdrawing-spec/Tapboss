@@ -6,6 +6,8 @@ import {
 } from "@workspace/db";
 import { eq, sql } from "drizzle-orm";
 import { requireSuperAdmin } from "../middleware/authz";
+import { companyScope, canAccessCompany } from "../lib/company-scope";
+import { writeAudit } from "../lib/audit";
 
 const router = Router();
 
@@ -47,8 +49,11 @@ router.get("/companies", async (req, res) => {
       ])
     );
 
+    // Company-scope enforcement: non-super-admins only see their companies.
+    const scope = companyScope(req);
+    const visible = scope === null ? companies : companies.filter((c) => scope.includes(c.id));
     res.json(
-      companies.map((c) =>
+      visible.map((c) =>
         formatCompany(c, empMap.get(c.id) ?? 0, revMap.get(c.id) ?? 0)
       )
     );
@@ -63,6 +68,10 @@ router.post("/companies", requireSuperAdmin, async (req, res) => {
     const parsed = insertCompanySchema.safeParse(req.body);
     if (!parsed.success) { res.status(400).json({ error: "Invalid input" }); return; }
     const [c] = await db.insert(companiesTable).values(parsed.data).returning();
+    void writeAudit({
+      userId: (req as any).localUser?.id ?? null, userEmail: (req as any).localUser?.email ?? null,
+      action: "company.created", targetType: "company", targetId: String(c.id), description: `Created company "${c.name}"`,
+    });
     res.status(201).json(formatCompany(c));
   } catch (e) {
     req.log.error(e);
@@ -74,7 +83,7 @@ router.get("/companies/:companyId", async (req, res) => {
   try {
     const id = parseInt(String(req.params.companyId));
     const [c] = await db.select().from(companiesTable).where(eq(companiesTable.id, id));
-    if (!c) { res.status(404).json({ error: "Not found" }); return; }
+    if (!c || !canAccessCompany(req, id)) { res.status(404).json({ error: "Not found" }); return; }
     res.json(formatCompany(c));
   } catch (e) {
     req.log.error(e);

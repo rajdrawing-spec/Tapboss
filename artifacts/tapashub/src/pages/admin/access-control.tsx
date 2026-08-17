@@ -124,6 +124,7 @@ function UsersTab({ roles }: { roles: AdminRole[] }) {
   const { companies } = useCompany()
   const { data: users = [] } = useQuery<AdminUser[]>({ queryKey: ["/api/users"], queryFn: () => adminApi.get("/users") })
   const [editingRoles, setEditingRoles] = React.useState<AdminUser | null>(null)
+  const [editingCvAccess, setEditingCvAccess] = React.useState<AdminUser | null>(null)
 
   const patchUser = useMutation({
     mutationFn: ({ id, body }: { id: number; body: Record<string, unknown> }) => adminApi.patch(`/users/${id}`, body),
@@ -202,6 +203,9 @@ function UsersTab({ roles }: { roles: AdminRole[] }) {
                     >
                       {u.status === "disabled" ? "Enable" : "Disable"}
                     </Button>
+                    <Button size="sm" variant="outline" title="Restrict to specific clients/vendors" onClick={() => setEditingCvAccess(u)}>
+                      Clients/Vendors
+                    </Button>
                     <Button size="sm" variant="ghost" onClick={() => { if (confirm(`Remove ${u.email}?`)) deleteUser.mutate(u.id) }}>
                       <Trash2 className="w-4 h-4 text-destructive" />
                     </Button>
@@ -216,6 +220,9 @@ function UsersTab({ roles }: { roles: AdminRole[] }) {
         </Table>
         <ErrorNote error={patchUser.error || deleteUser.error} />
       </CardContent>
+      {editingCvAccess && (
+        <CvAccessDialog user={editingCvAccess} onClose={() => setEditingCvAccess(null)} />
+      )}
       {editingRoles && (
         <RoleAssignDialog
           user={editingRoles}
@@ -225,6 +232,56 @@ function UsersTab({ roles }: { roles: AdminRole[] }) {
         />
       )}
     </Card>
+  )
+}
+
+/** Row-level client/vendor restriction editor. Empty selection = unrestricted. */
+function CvAccessDialog({ user, onClose }: { user: AdminUser; onClose: () => void }) {
+  interface CvRow { id: number; companyId: number; type: string; name: string }
+  const { companies } = useCompany()
+  const { data: cvData } = useQuery<{ items: CvRow[] }>({
+    queryKey: ["/api/client-vendors", "access-dialog"],
+    queryFn: () => adminApi.get("/client-vendors?pageSize=100"),
+  })
+  const { data: access } = useQuery<{ clientVendorIds: number[] }>({
+    queryKey: ["/api/users", user.id, "client-vendor-access"],
+    queryFn: () => adminApi.get(`/users/${user.id}/client-vendor-access`),
+  })
+  const [selected, setSelected] = React.useState<number[] | null>(null)
+  React.useEffect(() => { if (access && selected === null) setSelected(access.clientVendorIds) }, [access, selected])
+  const qc = useQueryClient()
+  const save = useMutation({
+    mutationFn: () => adminApi.put(`/users/${user.id}/client-vendor-access`, { clientVendorIds: selected ?? [] }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/users", user.id, "client-vendor-access"] }); onClose() },
+  })
+  const items = cvData?.items ?? []
+  const companyName = (id: number) => companies.find((c) => c.id === id)?.name ?? `#${id}`
+  const toggle = (id: number) => setSelected((s) => (s ?? []).includes(id) ? (s ?? []).filter((x) => x !== id) : [...(s ?? []), id])
+  return (
+    <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader><DialogTitle>Client/Vendor access — {user.name}</DialogTitle></DialogHeader>
+        <p className="text-xs text-muted-foreground">
+          Select specific clients/vendors to restrict this user to. No selection = unrestricted (sees everything their role and companies allow).
+        </p>
+        <div className="max-h-64 overflow-y-auto space-y-1 py-1">
+          {items.length === 0 && <p className="text-sm text-muted-foreground">No clients or vendors exist yet.</p>}
+          {items.map((cv) => (
+            <label key={cv.id} className="flex items-center gap-2 text-sm p-1.5 rounded hover:bg-muted cursor-pointer">
+              <Checkbox checked={(selected ?? []).includes(cv.id)} onCheckedChange={() => toggle(cv.id)} />
+              <span className="flex-1 truncate">{cv.name}</span>
+              <Badge variant="outline" className="text-[10px]">{cv.type}</Badge>
+              <span className="text-[10px] text-muted-foreground">{companyName(cv.companyId)}</span>
+            </label>
+          ))}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={() => save.mutate()} disabled={save.isPending || selected === null}>{save.isPending ? "Saving…" : "Save"}</Button>
+        </DialogFooter>
+        <ErrorNote error={save.error} />
+      </DialogContent>
+    </Dialog>
   )
 }
 

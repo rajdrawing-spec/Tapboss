@@ -27,6 +27,7 @@ export * from "./marketing";
 export * from "./marketing-projects";
 export * from "./ad-platform";
 export * from "./client-portal";
+export * from "./client-vendors";
 export * from "./treasury";
 export * from "./ai";
 export * from "./ai-reports";

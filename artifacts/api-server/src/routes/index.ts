@@ -38,6 +38,7 @@ import invoicesRouter from "./invoices";
 import marketingProjectsRouter from "./marketing-projects";
 import clientMarketingRouter from "./client-marketing";
 import adConnectionsRouter from "./ad-connections";
+import clientVendorsRouter from "./client-vendors";
 import { blockClientUsersFromInternalApi } from "../lib/project-scope";
 
 const router: IRouter = Router();
@@ -53,6 +54,7 @@ router.use(blockClientUsersFromInternalApi);
 router.use(clientMarketingRouter);
 router.use(marketingProjectsRouter);
 router.use(adConnectionsRouter);
+router.use(clientVendorsRouter);
 router.use(companiesRouter);
 router.use(dashboardRouter);
 router.use(analyticsRouter);

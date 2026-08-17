@@ -28,6 +28,8 @@ const H = vi.hoisted(() => {
     campaigns: [],
     campaign_creatives: [],
     campaign_leads: [],
+    user_client_vendor_access: [],
+    client_vendors: [],
   };
 
   function reset() {
@@ -36,6 +38,8 @@ const H = vi.hoisted(() => {
     store.campaigns = [];
     store.campaign_creatives = [];
     store.campaign_leads = [];
+    store.user_client_vendor_access = [];
+    store.client_vendors = [];
   }
 
   function makeTable(name: string) {
@@ -54,6 +58,8 @@ const H = vi.hoisted(() => {
   const campaignsTable = makeTable("campaigns");
   const campaignCreativesTable = makeTable("campaign_creatives");
   const campaignLeadsTable = makeTable("campaign_leads");
+  const userClientVendorAccessTable = makeTable("user_client_vendor_access");
+  const clientVendorsTable = makeTable("client_vendors");
 
   const field = (col: string) => col.split(".")[1];
 
@@ -123,7 +129,7 @@ const H = vi.hoisted(() => {
 
   const db = { select: (cols?: Record<string, any>) => new QB().select(cols) };
 
-  return { store, reset, db, documentsTable, shipmentsTable, campaignsTable, campaignCreativesTable, campaignLeadsTable };
+  return { store, reset, db, documentsTable, shipmentsTable, campaignsTable, campaignCreativesTable, campaignLeadsTable, userClientVendorAccessTable, clientVendorsTable };
 });
 
 vi.mock("@workspace/db", () => ({
@@ -138,6 +144,8 @@ vi.mock("@workspace/db", () => ({
   campaignCreativesTable: H.campaignCreativesTable,
   insertCampaignCreativeSchema: { safeParse: () => ({ success: false }) },
   campaignLeadsTable: H.campaignLeadsTable,
+  userClientVendorAccessTable: H.userClientVendorAccessTable,
+  clientVendorsTable: H.clientVendorsTable,
   insertCampaignLeadSchema: { safeParse: () => ({ success: false }) },
 }));
 
@@ -160,6 +168,12 @@ vi.mock("@clerk/express", () => ({
 // Side-effecting helpers touched only by non-list paths — no-op them.
 vi.mock("../lib/notify", () => ({ emitNotification: vi.fn() }));
 vi.mock("../lib/url-safety", () => ({ isSafeAttachmentUrl: () => true }));
+// Permission resolution hits the roles table; this suite tests tenancy, not RBAC.
+vi.mock("../middleware/authz", () => ({
+  requirePermission: () => (_req: any, _res: any, next: any) => next(),
+  requireSuperAdmin: (req: any, res: any, next: any) =>
+    req.localUser?.role === "super_admin" ? next() : res.status(403).json({ error: "Forbidden" }),
+}));
 vi.mock("../lib/integration-adapters", () => ({ getAdapter: vi.fn() }));
 vi.mock("../lib/integration-catalog", () => ({ getCatalogPlatform: vi.fn() }));
 

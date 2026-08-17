@@ -6,7 +6,7 @@ import {
   TrendingUp, FileText, Megaphone, LayoutDashboard, PieChart, LogOut, Contact,
   Headset, Truck, ShieldCheck, ScrollText, Landmark,
   CalendarDays, ChevronRight, Home, Phone, MoreHorizontal, X, Plus,
-  Sparkles, Briefcase,
+  Sparkles, Briefcase, Handshake,
 } from "lucide-react"
 import { GlobalSearch } from "@/components/global-search"
 import { NotificationBadge } from "@/components/notification-badge"
@@ -57,6 +57,7 @@ const parentGroups: NavGroup[] = [
       { name: "Companies", href: "/companies", icon: Building2, perm: "platform.companies" },
       { name: "Marketing", href: "/marketing", icon: Megaphone, perm: "marketing.view" },
       { name: "Account Directory", href: "/accounts", icon: Contact, perm: "directory.view" },
+      { name: "Clients & Vendors", href: "/clients-vendors", icon: Handshake, perm: "clients_vendors.view" },
     ],
   },
   {
@@ -103,6 +104,7 @@ const subsidiaryGroups: NavGroup[] = [
       { name: "Products", href: "/inventory", icon: PackageSearch, perm: "inventory.view" },
       { name: "Shipping", href: "/shipping", icon: Truck, perm: "shipping.view" },
       { name: "Customers", href: "/crm", icon: UsersRound, perm: "crm.view" },
+      { name: "Clients & Vendors", href: "/clients-vendors", icon: Handshake, perm: "clients_vendors.view" },
       { name: "Marketing", href: "/marketing", icon: Megaphone, perm: "marketing.view" },
     ],
   },

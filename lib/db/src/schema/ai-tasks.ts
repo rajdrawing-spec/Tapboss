@@ -29,6 +29,7 @@ export type NewTaskTemplate = typeof taskTemplatesTable.$inferInsert;
 export const generatedTasksTable = pgTable("generated_tasks", {
   id: serial("id").primaryKey(),
   companyId: integer("company_id").notNull(),
+  clientVendorId: integer("client_vendor_id"), // optional link to client_vendors
   employeeId: integer("employee_id").notNull(),
   templateId: integer("template_id"),
   generatedDate: date("generated_date", { mode: "string" }).notNull(),

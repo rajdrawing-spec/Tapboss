@@ -60,6 +60,8 @@ export const PERMISSIONS: PermissionDef[] = [
   { key: "callcenter.view", label: "Use the call center (make/receive calls, own history)", group: "Call Center" },
   { key: "callcenter.manage", label: "Manage call center (numbers, settings, all calls)", group: "Call Center" },
   { key: "client_portal.view", label: "Access the client marketing portal", group: "Client Portal" },
+  { key: "clients_vendors.view", label: "View clients & vendors directory", group: "Clients & Vendors" },
+  { key: "clients_vendors.manage", label: "Manage clients & vendors (create, edit, delete)", group: "Clients & Vendors" },
 ];
 
 /** Role keys whose holders are CLIENT (external) users: they may only access
@@ -114,6 +116,12 @@ export const SYSTEM_ROLES: SystemRoleDef[] = [
     name: "Client Admin",
     description: "External client — full access to their marketing project's client portal.",
     permissions: ["client_portal.view"],
+  },
+  {
+    key: "vendor_user",
+    name: "Vendor User",
+    description: "External vendor — sees only their own vendor's assigned tasks and documents within their company.",
+    permissions: ["dashboard.view", "ai_tasks.read", "documents.view", "chat.read", "meetings.read", "clients_vendors.view"],
   },
   {
     key: "client_viewer",

@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { requirePermission } from "../middleware/authz";
 import { canAccessCompany } from "../lib/company-scope";
+import { clientVendorScope } from "../lib/client-vendor-scope";
+import { inArray } from "drizzle-orm";
 import {
   listTemplates,
   getTemplate,
@@ -360,18 +362,48 @@ router.get("/ai-tasks/my-tasks", requirePermission("ai_tasks.read"), async (req,
       res.status(400).json({ error: "employeeId is required" });
       return;
     }
+    // Re-validate the client-supplied employeeId: must belong to this company.
+    const [emp] = await db
+      .select({ id: employeesTable.id })
+      .from(employeesTable)
+      .where(and(eq(employeesTable.id, employeeId), eq(employeesTable.companyId, companyId)));
+    if (!emp) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+    // Row-level client/vendor restriction (e.g. vendor users): only tasks
+    // linked to their assigned client/vendor records.
+    const cvScope = await clientVendorScope(req);
+    const emptyStats = { total: 0, pending: 0, approved: 0, completed: 0, rejected: 0, overdue: 0, dueToday: 0, highPriority: 0 };
+    if (cvScope !== null && cvScope.length === 0) {
+      res.json({ tasks: [], stats: emptyStats });
+      return;
+    }
+    const conds = [
+      eq(generatedTasksTable.companyId, companyId),
+      eq(generatedTasksTable.employeeId, employeeId),
+      eq(generatedTasksTable.generatedDate, runDate),
+    ];
+    if (cvScope !== null) conds.push(inArray(generatedTasksTable.clientVendorId, cvScope));
     const tasks = await db
       .select()
       .from(generatedTasksTable)
-      .where(
-        and(
-          eq(generatedTasksTable.companyId, companyId),
-          eq(generatedTasksTable.employeeId, employeeId),
-          eq(generatedTasksTable.generatedDate, runDate),
-        ),
-      )
+      .where(and(...conds))
       .orderBy(desc(generatedTasksTable.priority), desc(generatedTasksTable.createdAt));
-    const stats = await getTaskStats(companyId, employeeId, runDate);
+    // For restricted users, aggregate stats must not leak counts of tasks
+    // outside their scope — derive them from the (already-filtered) rows.
+    const stats = cvScope !== null
+      ? {
+          total: tasks.length,
+          pending: tasks.filter((t) => t.status === "draft").length,
+          approved: tasks.filter((t) => t.status === "approved").length,
+          completed: tasks.filter((t) => t.status === "completed").length,
+          rejected: tasks.filter((t) => t.status === "rejected").length,
+          overdue: tasks.filter((t) => t.status !== "completed" && t.dueDate != null && t.dueDate < runDate).length,
+          dueToday: tasks.filter((t) => t.status !== "completed" && t.dueDate === runDate).length,
+          highPriority: tasks.filter((t) => t.status !== "completed" && t.priority === "high").length,
+        }
+      : await getTaskStats(companyId, employeeId, runDate);
     res.json({ tasks, stats });
   } catch (e) {
     req.log.error(e);
