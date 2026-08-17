@@ -1,8 +1,8 @@
 import { Router } from "express";
 import {
-  db, adConnectionsTable, adAccountsTable, syncJobsTable, syncLogsTable,
+  db, adConnectionsTable, adAccountsTable, syncJobsTable, syncLogsTable, campaignsTable,
 } from "@workspace/db";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, inArray } from "drizzle-orm";
 import { z } from "zod/v4";
 import { requireSuperAdmin } from "../middleware/authz";
 import { canAccessCompany } from "../lib/company-scope";
@@ -227,6 +227,92 @@ router.get("/ad-connections/:id/jobs/:jobId/logs", async (req, res) => {
       .where(eq(syncLogsTable.jobId, jobId)).orderBy(desc(syncLogsTable.createdAt)).limit(200);
     res.json(logs);
   } catch (e) { req.log.error(e); res.status(500).json({ error: "Failed to list sync logs" }); }
+});
+
+/* -------------------- Internal marketing intelligence -------------------- */
+
+/**
+ * Aggregated internal dashboard (super-admin): totals + per-channel breakdown
+ * + campaign performance across an optional company filter.
+ */
+router.get("/marketing-intelligence/overview", requireSuperAdmin, async (req, res) => {
+  try {
+    const companyId = req.query.companyId ? parseInt(String(req.query.companyId)) : null;
+    if (companyId !== null && (!Number.isFinite(companyId) || !canAccessCompany(req, companyId))) {
+      res.status(403).json({ error: "Forbidden" }); return;
+    }
+    const campaigns = companyId !== null
+      ? await db.select().from(campaignsTable).where(eq(campaignsTable.companyId, companyId))
+      : await db.select().from(campaignsTable);
+    const connections = companyId !== null
+      ? await db.select().from(adConnectionsTable).where(eq(adConnectionsTable.companyId, companyId))
+      : await db.select().from(adConnectionsTable);
+
+    const totals = { spend: 0, revenue: 0, impressions: 0, clicks: 0, leads: 0, conversions: 0, campaigns: campaigns.length, activeCampaigns: 0 };
+    const byChannel = new Map<string, { channel: string; campaigns: number; spend: number; revenue: number; impressions: number; clicks: number; leads: number; conversions: number }>();
+    for (const c of campaigns) {
+      const spend = Number(c.spent) || 0, revenue = Number(c.revenue) || 0;
+      const impressions = Number(c.impressions) || 0, clicks = Number(c.clicks) || 0;
+      const leads = Number(c.leads) || 0, conversions = Number(c.conversions) || 0;
+      totals.spend += spend; totals.revenue += revenue; totals.impressions += impressions;
+      totals.clicks += clicks; totals.leads += leads; totals.conversions += conversions;
+      if (c.status === "active") totals.activeCampaigns += 1;
+      const ch = byChannel.get(c.channel) ?? { channel: c.channel, campaigns: 0, spend: 0, revenue: 0, impressions: 0, clicks: 0, leads: 0, conversions: 0 };
+      ch.campaigns += 1; ch.spend += spend; ch.revenue += revenue; ch.impressions += impressions;
+      ch.clicks += clicks; ch.leads += leads; ch.conversions += conversions;
+      byChannel.set(c.channel, ch);
+    }
+    res.json({
+      totals: {
+        ...totals,
+        roas: totals.spend > 0 ? totals.revenue / totals.spend : null,
+        ctr: totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : null,
+        cpl: totals.leads > 0 && totals.spend > 0 ? totals.spend / totals.leads : null,
+      },
+      byChannel: Array.from(byChannel.values()).sort((a, b) => b.spend - a.spend),
+      connections: connections.map((c) => ({
+        id: c.id, companyId: c.companyId, platform: c.platform, status: c.status,
+        accountLabel: c.accountLabel, lastSyncedAt: c.lastSyncedAt, lastError: c.lastError,
+      })),
+      campaigns: campaigns
+        .sort((a, b) => (Number(b.spent) || 0) - (Number(a.spent) || 0))
+        .slice(0, 100)
+        .map((c) => ({
+          id: c.id, companyId: c.companyId, name: c.name, channel: c.channel, status: c.status,
+          budget: c.budget, spent: c.spent, revenue: c.revenue, impressions: c.impressions,
+          clicks: c.clicks, leads: c.leads, conversions: c.conversions,
+          roas: (Number(c.spent) || 0) > 0 ? (Number(c.revenue) || 0) / Number(c.spent) : null,
+          ctr: (Number(c.impressions) || 0) > 0 ? ((Number(c.clicks) || 0) / Number(c.impressions)) * 100 : null,
+        })),
+    });
+  } catch (e) { req.log.error(e); res.status(500).json({ error: "Failed to load marketing overview" }); }
+});
+
+/** Recent sync jobs across all connections (super-admin), newest first. */
+router.get("/marketing-intelligence/sync-jobs", requireSuperAdmin, async (req, res) => {
+  try {
+    const companyId = req.query.companyId ? parseInt(String(req.query.companyId)) : null;
+    if (companyId !== null && (!Number.isFinite(companyId) || !canAccessCompany(req, companyId))) {
+      res.status(403).json({ error: "Forbidden" }); return;
+    }
+    const connections = companyId !== null
+      ? await db.select().from(adConnectionsTable).where(eq(adConnectionsTable.companyId, companyId))
+      : await db.select().from(adConnectionsTable);
+    if (connections.length === 0) { res.json([]); return; }
+    const jobs = await db.select().from(syncJobsTable)
+      .where(inArray(syncJobsTable.connectionId, connections.map((c) => c.id)))
+      .orderBy(desc(syncJobsTable.startedAt)).limit(50);
+    const byId = new Map(connections.map((c) => [c.id, c]));
+    res.json(jobs.map((j) => {
+      const conn = byId.get(j.connectionId);
+      return {
+        ...j,
+        platform: conn?.platform ?? "unknown",
+        accountLabel: conn?.accountLabel ?? null,
+        companyId: conn?.companyId ?? null,
+      };
+    }));
+  } catch (e) { req.log.error(e); res.status(500).json({ error: "Failed to list sync jobs" }); }
 });
 
 export default router;

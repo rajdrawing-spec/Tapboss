@@ -14,6 +14,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/hooks/use-toast"
 import { Plus, Trash2, UserPlus, X, Briefcase, Eye, Sparkles, ScrollText, Share2, FileText, Plug, RefreshCw, Download } from "lucide-react"
@@ -96,8 +97,8 @@ export default function MarketingProjects() {
     <div className="space-y-6 p-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Client Marketing Projects</h1>
-          <p className="text-muted-foreground">Create projects, assign team & client users, and control portal access.</p>
+          <h1 className="text-2xl font-bold">Marketing Intelligence</h1>
+          <p className="text-muted-foreground">Projects, performance, AI insights and sync health across your marketing clients.</p>
         </div>
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
           <DialogTrigger asChild>
@@ -145,6 +146,16 @@ export default function MarketingProjects() {
         </Dialog>
       </div>
 
+      <Tabs defaultValue="projects">
+        <TabsList className="flex-wrap">
+          <TabsTrigger value="projects">Projects</TabsTrigger>
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="performance">Performance</TabsTrigger>
+          <TabsTrigger value="ai">AI Insights</TabsTrigger>
+          <TabsTrigger value="sync">Sync Status</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="projects" className="mt-4">
       {isLoading ? (
         <div className="flex h-40 items-center justify-center">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
@@ -168,6 +179,268 @@ export default function MarketingProjects() {
               onRemoveMember={(userId) => removeMemberMut.mutate({ projectId: p.id, userId })}
             />
           ))}
+        </div>
+      )}
+        </TabsContent>
+        <TabsContent value="overview" className="mt-4"><IntelOverviewTab companies={companies} mode="overview" /></TabsContent>
+        <TabsContent value="performance" className="mt-4"><IntelOverviewTab companies={companies} mode="performance" /></TabsContent>
+        <TabsContent value="ai" className="mt-4"><AiInsightsTab projects={projects} companies={companies} /></TabsContent>
+        <TabsContent value="sync" className="mt-4"><SyncStatusTab companies={companies} /></TabsContent>
+      </Tabs>
+    </div>
+  )
+}
+
+/* ---------------------- Internal marketing intelligence ---------------------- */
+
+interface IntelCompany { id: number; name: string }
+
+function CompanyFilter({ companies, value, onChange }: { companies: IntelCompany[]; value: string; onChange: (v: string) => void }) {
+  return (
+    <Select value={value} onValueChange={onChange}>
+      <SelectTrigger className="w-56"><SelectValue /></SelectTrigger>
+      <SelectContent>
+        <SelectItem value="all">All companies</SelectItem>
+        {companies.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}
+      </SelectContent>
+    </Select>
+  )
+}
+
+const fmtMoney = (n: number) => `₹${Math.round(n).toLocaleString("en-IN")}`
+const fmtCount = (n: number) => n.toLocaleString("en-IN")
+
+interface IntelOverview {
+  totals: { spend: number; revenue: number; impressions: number; clicks: number; leads: number; conversions: number; campaigns: number; activeCampaigns: number; roas: number | null; ctr: number | null; cpl: number | null }
+  byChannel: { channel: string; campaigns: number; spend: number; revenue: number; impressions: number; clicks: number; leads: number; conversions: number }[]
+  connections: { id: number; companyId: number; platform: string; status: string; accountLabel: string | null; lastSyncedAt: string | null; lastError: string | null }[]
+  campaigns: { id: number; companyId: number; name: string; channel: string; status: string; budget: number; spent: number; revenue: number; impressions: number; clicks: number; leads: number; conversions: number; roas: number | null; ctr: number | null }[]
+}
+
+function IntelOverviewTab({ companies, mode }: { companies: IntelCompany[]; mode: "overview" | "performance" }) {
+  const [company, setCompany] = React.useState("all")
+  const { data, isLoading, isError } = useQuery<IntelOverview>({
+    queryKey: ["/api/marketing-intelligence/overview", company],
+    queryFn: () => adminApi.get(`/marketing-intelligence/overview${company === "all" ? "" : `?companyId=${company}`}`),
+  })
+
+  if (isLoading) return <div className="flex h-40 items-center justify-center"><div className="h-6 w-6 animate-spin rounded-full border-2 border-muted border-t-primary" /></div>
+  if (isError || !data) return <p className="py-8 text-center text-sm text-destructive">Failed to load marketing data.</p>
+
+  const t = data.totals
+  const companyName = (id: number) => companies.find((c) => c.id === id)?.name ?? `#${id}`
+
+  return (
+    <div className="space-y-5">
+      <CompanyFilter companies={companies} value={company} onChange={setCompany} />
+
+      {mode === "overview" ? (
+        <>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {[
+              { label: "Ad Spend", value: fmtMoney(t.spend) },
+              { label: "Ad Revenue", value: fmtMoney(t.revenue) },
+              { label: "ROAS", value: t.roas != null ? `${t.roas.toFixed(2)}x` : "—" },
+              { label: "Campaigns", value: `${fmtCount(t.activeCampaigns)} active / ${fmtCount(t.campaigns)}` },
+              { label: "Impressions", value: fmtCount(t.impressions) },
+              { label: "Clicks", value: `${fmtCount(t.clicks)}${t.ctr != null ? ` · ${t.ctr.toFixed(2)}% CTR` : ""}` },
+              { label: "Leads", value: `${fmtCount(t.leads)}${t.cpl != null ? ` · ${fmtMoney(t.cpl)} CPL` : ""}` },
+              { label: "Conversions", value: fmtCount(t.conversions) },
+            ].map((c) => (
+              <div key={c.label} className="rounded-lg border p-4">
+                <p className="text-xs text-muted-foreground">{c.label}</p>
+                <p className="mt-1 text-xl font-bold">{c.value}</p>
+              </div>
+            ))}
+          </div>
+
+          <Card>
+            <CardHeader><CardTitle className="text-base">Platform comparison</CardTitle></CardHeader>
+            <CardContent>
+              {data.byChannel.length === 0 ? (
+                <p className="py-4 text-center text-sm text-muted-foreground">No campaigns yet.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead><tr className="border-b text-left text-xs text-muted-foreground">
+                      <th className="py-2 pr-3">Channel</th><th className="py-2 pr-3">Campaigns</th><th className="py-2 pr-3">Spend</th><th className="py-2 pr-3">Revenue</th><th className="py-2 pr-3">ROAS</th><th className="py-2 pr-3">Impressions</th><th className="py-2 pr-3">Clicks</th><th className="py-2 pr-3">Leads</th><th className="py-2">Conversions</th>
+                    </tr></thead>
+                    <tbody>
+                      {data.byChannel.map((ch) => (
+                        <tr key={ch.channel} className="border-b last:border-0">
+                          <td className="py-2 pr-3 font-medium capitalize">{ch.channel.replace("_", " ")}</td>
+                          <td className="py-2 pr-3">{ch.campaigns}</td>
+                          <td className="py-2 pr-3">{fmtMoney(ch.spend)}</td>
+                          <td className="py-2 pr-3">{fmtMoney(ch.revenue)}</td>
+                          <td className="py-2 pr-3">{ch.spend > 0 ? `${(ch.revenue / ch.spend).toFixed(2)}x` : "—"}</td>
+                          <td className="py-2 pr-3">{fmtCount(ch.impressions)}</td>
+                          <td className="py-2 pr-3">{fmtCount(ch.clicks)}</td>
+                          <td className="py-2 pr-3">{fmtCount(ch.leads)}</td>
+                          <td className="py-2">{fmtCount(ch.conversions)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle className="text-base">Platform connections</CardTitle></CardHeader>
+            <CardContent className="space-y-2">
+              {data.connections.length === 0 ? (
+                <p className="py-2 text-center text-sm text-muted-foreground">No ad platforms connected yet. Use “Ad Accounts” on a project card.</p>
+              ) : data.connections.map((c) => (
+                <div key={c.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary" className="capitalize">{c.platform.replace("_", " ")}</Badge>
+                    <span className="font-medium">{c.accountLabel || companyName(c.companyId)}</span>
+                    <span className="text-xs text-muted-foreground">{companyName(c.companyId)}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs">
+                    <Badge variant={c.status === "connected" ? "default" : "destructive"}>{c.status}</Badge>
+                    <span className="text-muted-foreground">{c.lastSyncedAt ? `synced ${new Date(c.lastSyncedAt).toLocaleString()}` : "never synced"}</span>
+                  </div>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        </>
+      ) : (
+        <Card>
+          <CardHeader><CardTitle className="text-base">Campaign performance (top 100 by spend)</CardTitle></CardHeader>
+          <CardContent>
+            {data.campaigns.length === 0 ? (
+              <p className="py-4 text-center text-sm text-muted-foreground">No campaigns yet.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead><tr className="border-b text-left text-xs text-muted-foreground">
+                    <th className="py-2 pr-3">Campaign</th><th className="py-2 pr-3">Company</th><th className="py-2 pr-3">Channel</th><th className="py-2 pr-3">Status</th><th className="py-2 pr-3">Spend</th><th className="py-2 pr-3">Revenue</th><th className="py-2 pr-3">ROAS</th><th className="py-2 pr-3">Impr.</th><th className="py-2 pr-3">Clicks</th><th className="py-2 pr-3">CTR</th><th className="py-2 pr-3">Leads</th><th className="py-2">Conv.</th>
+                  </tr></thead>
+                  <tbody>
+                    {data.campaigns.map((c) => (
+                      <tr key={c.id} className="border-b last:border-0">
+                        <td className="max-w-[220px] truncate py-2 pr-3 font-medium">{c.name}</td>
+                        <td className="py-2 pr-3">{companyName(c.companyId)}</td>
+                        <td className="py-2 pr-3 capitalize">{c.channel.replace("_", " ")}</td>
+                        <td className="py-2 pr-3"><Badge variant={c.status === "active" ? "default" : "secondary"}>{c.status}</Badge></td>
+                        <td className="py-2 pr-3">{fmtMoney(c.spent)}</td>
+                        <td className="py-2 pr-3">{fmtMoney(c.revenue)}</td>
+                        <td className="py-2 pr-3">{c.roas != null ? `${c.roas.toFixed(2)}x` : "—"}</td>
+                        <td className="py-2 pr-3">{fmtCount(c.impressions)}</td>
+                        <td className="py-2 pr-3">{fmtCount(c.clicks)}</td>
+                        <td className="py-2 pr-3">{c.ctr != null ? `${c.ctr.toFixed(2)}%` : "—"}</td>
+                        <td className="py-2 pr-3">{fmtCount(c.leads)}</td>
+                        <td className="py-2">{fmtCount(c.conversions)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  )
+}
+
+interface AiPlanRow { id: number; status: string; summary: string | null; createdAt: string }
+
+function AiInsightsTab({ projects, companies }: { projects: MarketingProject[]; companies: IntelCompany[] }) {
+  const results = useQueries({
+    queries: projects.map((p) => ({
+      queryKey: ["/api/marketing-projects", p.id, "ai-plans"],
+      queryFn: () => adminApi.get(`/marketing-projects/${p.id}/ai-plans`) as Promise<AiPlanRow[]>,
+    })),
+  })
+  if (projects.length === 0) return <p className="py-8 text-center text-sm text-muted-foreground">Create a marketing project first — AI plans are generated per project.</p>
+  return (
+    <div className="grid gap-4 lg:grid-cols-2">
+      {projects.map((p, i) => {
+        const q = results[i]
+        const latest = q.data?.[0]
+        return (
+          <Card key={p.id}>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0">
+              <div>
+                <CardTitle className="text-base">{p.name}</CardTitle>
+                <p className="text-xs text-muted-foreground">{companies.find((c) => c.id === p.companyId)?.name ?? `Company #${p.companyId}`}</p>
+              </div>
+              {latest && <Badge variant={latest.status === "approved" ? "default" : "secondary"}>{latest.status}</Badge>}
+            </CardHeader>
+            <CardContent>
+              {q.isLoading ? (
+                <div className="flex h-16 items-center justify-center"><div className="h-5 w-5 animate-spin rounded-full border-2 border-muted border-t-primary" /></div>
+              ) : !latest ? (
+                <p className="text-sm text-muted-foreground">No AI plan yet — generate one from the project card’s AI Plans dialog, or the client can request one from the portal.</p>
+              ) : (
+                <>
+                  <p className="line-clamp-4 whitespace-pre-wrap text-sm">{latest.summary || "Plan generated — open AI Plans on the project card for details."}</p>
+                  <p className="mt-2 text-xs text-muted-foreground">Generated {new Date(latest.createdAt).toLocaleString()} · {q.data!.length} plan{q.data!.length === 1 ? "" : "s"} total</p>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        )
+      })}
+    </div>
+  )
+}
+
+interface SyncJobRow {
+  id: number; connectionId: number; status: string; trigger: string | null
+  startedAt: string; finishedAt: string | null; rowsUpserted: number | null; error: string | null
+  platform: string; accountLabel: string | null; companyId: number | null
+}
+
+function SyncStatusTab({ companies }: { companies: IntelCompany[] }) {
+  const [company, setCompany] = React.useState("all")
+  const { data: jobs = [], isLoading, isError, refetch, isFetching } = useQuery<SyncJobRow[]>({
+    queryKey: ["/api/marketing-intelligence/sync-jobs", company],
+    queryFn: () => adminApi.get(`/marketing-intelligence/sync-jobs${company === "all" ? "" : `?companyId=${company}`}`),
+    refetchInterval: 30_000,
+  })
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-2">
+        <CompanyFilter companies={companies} value={company} onChange={setCompany} />
+        <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>
+          <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`} />Refresh
+        </Button>
+      </div>
+      {isLoading ? (
+        <div className="flex h-32 items-center justify-center"><div className="h-6 w-6 animate-spin rounded-full border-2 border-muted border-t-primary" /></div>
+      ) : isError ? (
+        <p className="py-8 text-center text-sm text-destructive">Failed to load sync jobs.</p>
+      ) : jobs.length === 0 ? (
+        <p className="py-8 text-center text-sm text-muted-foreground">No sync runs yet. Connect an ad platform and use Sync Now, or wait for the 08/12/16/20 IST schedule.</p>
+      ) : (
+        <div className="overflow-x-auto rounded-lg border">
+          <table className="w-full text-sm">
+            <thead><tr className="border-b text-left text-xs text-muted-foreground">
+              <th className="p-2.5">Platform</th><th className="p-2.5">Account</th><th className="p-2.5">Company</th><th className="p-2.5">Trigger</th><th className="p-2.5">Status</th><th className="p-2.5">Rows</th><th className="p-2.5">Started</th><th className="p-2.5">Duration</th><th className="p-2.5">Error</th>
+            </tr></thead>
+            <tbody>
+              {jobs.map((j) => (
+                <tr key={j.id} className="border-b last:border-0">
+                  <td className="p-2.5 capitalize">{j.platform.replace("_", " ")}</td>
+                  <td className="max-w-[180px] truncate p-2.5">{j.accountLabel || "—"}</td>
+                  <td className="p-2.5">{j.companyId != null ? (companies.find((c) => c.id === j.companyId)?.name ?? `#${j.companyId}`) : "—"}</td>
+                  <td className="p-2.5">{j.trigger || "scheduled"}</td>
+                  <td className="p-2.5">
+                    <Badge variant={j.status === "success" ? "default" : j.status === "running" ? "secondary" : "destructive"}>{j.status}</Badge>
+                  </td>
+                  <td className="p-2.5">{j.rowsUpserted ?? "—"}</td>
+                  <td className="whitespace-nowrap p-2.5">{new Date(j.startedAt).toLocaleString()}</td>
+                  <td className="p-2.5">{j.finishedAt ? `${Math.max(0, Math.round((new Date(j.finishedAt).getTime() - new Date(j.startedAt).getTime()) / 1000))}s` : "—"}</td>
+                  <td className="max-w-[240px] truncate p-2.5 text-destructive">{j.error || ""}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>

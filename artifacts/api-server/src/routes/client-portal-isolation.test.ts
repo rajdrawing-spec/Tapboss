@@ -285,6 +285,14 @@ describe("blockClientUsersFromInternalApi", () => {
     expect(res.status).toBe(403);
   });
 
+  it("blocks a client user from the internal marketing-intelligence endpoints", async () => {
+    currentUser = CLIENT_USER;
+    for (const path of ["/marketing-intelligence/overview", "/marketing-intelligence/sync-jobs"]) {
+      const res = await request(app).get(path);
+      expect(res.status).toBe(403);
+    }
+  });
+
   it("blocks a client user from non-exempt /auth/* routes", async () => {
     currentUser = CLIENT_USER;
     const res = await request(app).get("/auth/sessions");
@@ -495,6 +503,36 @@ describe("client dashboard endpoints", () => {
     expect(res.body.campaignLifetime.roas).toBe(4);
     expect(res.body.campaignLifetime.cpl).toBe(50); // lifetime 200 spend / 4 lifetime campaign leads
     expect(res.body.campaignLifetime.cpa).toBe(100); // 200 / 2 conversions
+  });
+
+  it("overview traffic uses range-scoped daily rows verbatim — even zero-impression periods", async () => {
+    H.store.campaigns.push({ id: 1, companyId: 1, projectId, clientVisible: true, name: "A", status: "active", spent: 200, revenue: 800, impressions: 9999, clicks: 500, leads: 0, conversions: 0, createdAt: new Date() });
+    // Reach-only daily rows in range: impressions/clicks are genuinely zero.
+    H.store.campaign_daily_metrics.push({ id: 1, companyId: 1, campaignId: 1, date: "2026-08-05", source: "meta", spend: 10, revenue: 0, impressions: 0, reach: 120, clicks: 0, leads: 0, conversions: 0 });
+    const res = await request(app).get(`/client/marketing/projects/${projectId}/overview?from=2026-08-01&to=2026-08-10`);
+    expect(res.status).toBe(200);
+    expect(res.body.traffic.lifetime).toBe(false); // must NOT fall back to 9999 lifetime impressions
+    expect(res.body.traffic.impressions).toBe(0);
+    expect(res.body.traffic.reach).toBe(120);
+    expect(res.body.traffic.clicks).toBe(0);
+  });
+
+  it("overview traffic falls back to flagged lifetime totals when no daily rows exist", async () => {
+    H.store.campaigns.push({ id: 1, companyId: 1, projectId, clientVisible: true, name: "A", status: "active", spent: 200, revenue: 800, impressions: 1000, clicks: 50, leads: 0, conversions: 0, createdAt: new Date() });
+    const res = await request(app).get(`/client/marketing/projects/${projectId}/overview?from=2026-08-01&to=2026-08-10`);
+    expect(res.body.traffic.lifetime).toBe(true);
+    expect(res.body.traffic.impressions).toBe(1000);
+    expect(res.body.traffic.clicks).toBe(50);
+    expect(res.body.traffic.reach).toBeNull(); // campaigns store no lifetime reach
+    expect(res.body.traffic.ctr).toBe(5);
+  });
+
+  it("overview omits traffic entirely when campaigns are hidden", async () => {
+    H.store.client_visibility_settings.push({ id: 1, projectId, settings: { campaigns: false } });
+    H.store.campaigns.push({ id: 1, companyId: 1, projectId, clientVisible: true, name: "A", status: "active", spent: 200, revenue: 800, impressions: 1000, clicks: 50, leads: 0, conversions: 0, createdAt: new Date() });
+    const res = await request(app).get(`/client/marketing/projects/${projectId}/overview?from=2026-08-01&to=2026-08-10`);
+    expect(res.status).toBe(200);
+    expect(res.body.traffic).toBeUndefined();
   });
 
   it("overview 400s on an invalid date range", async () => {

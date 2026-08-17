@@ -199,6 +199,23 @@ router.get("/client/marketing/projects/:projectId/overview", requireProjectAcces
     if (vis.adSpend && vis.leads) campaignLifetime.cpl = ct.leads > 0 && ct.spend > 0 ? ct.spend / ct.leads : null;
     if (vis.cpa) campaignLifetime.cpa = ct.conversions > 0 && ct.spend > 0 ? ct.spend / ct.conversions : null;
 
+    // Reach metrics (impressions / reach / clicks) — shown when campaigns are
+    // visible. Prefer range-scoped daily rows; fall back to campaign lifetime
+    // totals (flagged) when no dated metrics exist yet for this project.
+    let traffic: { impressions: number; reach: number | null; clicks: number; ctr: number | null; lifetime: boolean } | undefined;
+    if (vis.campaigns) {
+      const dImp = dailyRows.reduce((s, m) => s + (Number(m.impressions) || 0), 0);
+      const dReach = dailyRows.reduce((s, m) => s + (Number(m.reach) || 0), 0);
+      const dClicks = dailyRows.reduce((s, m) => s + (Number(m.clicks) || 0), 0);
+      if (dailyRows.length > 0) {
+        // Dated rows exist for this range — report the range sums verbatim,
+        // even if they are zero (a zero period must not masquerade as lifetime).
+        traffic = { impressions: dImp, reach: dReach > 0 ? dReach : null, clicks: dClicks, ctr: dImp > 0 ? (dClicks / dImp) * 100 : null, lifetime: false };
+      } else if (ct.impressions > 0 || ct.clicks > 0) {
+        traffic = { impressions: ct.impressions, reach: null, clicks: ct.clicks, ctr: ct.impressions > 0 ? (ct.clicks / ct.impressions) * 100 : null, lifetime: true };
+      }
+    }
+
     const comparison: Record<string, number | null> = {};
     if (vis.revenue) comparison.revenue = pctChange(cur.revenue, prev.revenue);
     if (vis.orders) comparison.orders = pctChange(cur.netOrders, prev.netOrders);
@@ -210,6 +227,7 @@ router.get("/client/marketing/projects/:projectId/overview", requireProjectAcces
       range: { from: range.from.toISOString(), to: range.to.toISOString(), group },
       kpis,
       campaignLifetime,
+      ...(traffic ? { traffic } : {}),
       comparison,
       timeseries: Array.from(buckets.values())
         .sort((a, b) => a.period.localeCompare(b.period))

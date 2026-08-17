@@ -131,6 +131,7 @@ function Delta({ value }: { value: number | null }) {
 interface Overview {
   kpis: { revenue?: number; orders?: number; leads?: number; conversionRate?: number | null; aov?: number }
   campaignLifetime: { adSpend?: number; roas?: number | null; cpl?: number | null; cpa?: number | null }
+  traffic?: { impressions: number; reach: number | null; clicks: number; ctr: number | null; lifetime: boolean }
   comparison: { revenue?: number | null; orders?: number | null; leads?: number | null }
   timeseries: { period: string; revenue?: number; orders?: number; leads?: number; spend?: number; roas?: number | null; conversions?: number; sessions?: number; users?: number }[]
 }
@@ -160,6 +161,9 @@ export function OverviewSection({ projectId }: { projectId: number }) {
     cl.adSpend !== undefined && { label: "Ad Spend (lifetime)", help: "Total ever spent across your campaigns", value: fmtINR(cl.adSpend), delta: null },
     cl.roas !== undefined && { label: "ROAS (lifetime)", help: "Campaign revenue per ₹1 of ad spend, all time", value: cl.roas != null ? `${cl.roas.toFixed(2)}x` : "—", delta: null },
     cl.cpl !== undefined && { label: "Cost / Lead (lifetime)", help: "Lifetime ad spend ÷ lifetime campaign leads", value: cl.cpl != null ? fmtINR(cl.cpl) : "—", delta: null },
+    data.traffic && { label: data.traffic.lifetime ? "Impressions (lifetime)" : "Impressions", help: data.traffic.lifetime ? "Total ad views across your campaigns, all time" : "Ad views in this period", value: fmtNum(data.traffic.impressions), delta: null },
+    data.traffic?.reach != null && { label: "Reach", help: "Unique people who saw your ads in this period", value: fmtNum(data.traffic.reach), delta: null },
+    data.traffic && { label: data.traffic.lifetime ? "Clicks (lifetime)" : "Clicks", help: `${data.traffic.lifetime ? "All-time" : "In-period"} ad clicks${data.traffic.ctr != null ? ` · CTR ${data.traffic.ctr.toFixed(2)}%` : ""}`, value: fmtNum(data.traffic.clicks), delta: null },
   ].filter(Boolean) as { label: string; help: string; value: string; delta: number | null }[]
 
   const hasRevenue = data.timeseries.some((t) => t.revenue !== undefined) || k.revenue !== undefined
