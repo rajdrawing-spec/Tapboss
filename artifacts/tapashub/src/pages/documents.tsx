@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Search, Plus, FileText, Pencil, Trash2, Calendar, Building2, Upload, ExternalLink, Link2, Eye, Paperclip } from "lucide-react"
 import { useCompany } from "@/contexts/company-context"
+import { useAuth } from "@/contexts/auth-context"
 import { useToast } from "@/hooks/use-toast"
 import { useUpload } from "@workspace/object-storage-web"
 
@@ -62,6 +63,8 @@ const FILE_TYPE_LABEL: Record<string, string> = { pdf: "PDF", image: "Image", do
 
 export default function Documents() {
   const { activeCompany, isParentView } = useCompany()
+  const { hasPermission } = useAuth()
+  const canManage = hasPermission("documents.manage")
   const { toast } = useToast()
   const [rows, setRows] = React.useState<Doc[]>([])
   const [loading, setLoading] = React.useState(true)
@@ -157,7 +160,7 @@ export default function Documents() {
           <h1 className="text-2xl font-bold flex items-center gap-2"><FileText className="w-6 h-6 text-primary" /> Documents</h1>
           <p className="text-sm text-muted-foreground mt-1">{isParentView ? "GST, trademarks, invoices & certificates across the group" : `${activeCompany?.name} legal & compliance vault`}</p>
         </div>
-        <Button onClick={openAdd}><Plus className="w-4 h-4 mr-2" /> Add Document</Button>
+        {canManage && <Button onClick={openAdd}><Plus className="w-4 h-4 mr-2" /> Add Document</Button>}
       </div>
 
       <div className="flex flex-col sm:flex-row gap-3">
@@ -219,8 +222,8 @@ export default function Documents() {
                 </div>
                 <div className="flex gap-2 pt-1 opacity-0 group-hover:opacity-100 transition-opacity">
                   <Button variant="outline" size="sm" className="flex-1" onClick={() => setDetail(d)}><Eye className="w-3.5 h-3.5 mr-1" /> Details</Button>
-                  <Button variant="outline" size="sm" onClick={() => openEdit(d)}><Pencil className="w-3.5 h-3.5" /></Button>
-                  <Button variant="outline" size="sm" className="text-red-400" onClick={() => del(d.id)}><Trash2 className="w-3.5 h-3.5" /></Button>
+                  {canManage && <Button variant="outline" size="sm" onClick={() => openEdit(d)}><Pencil className="w-3.5 h-3.5" /></Button>}
+                  {canManage && <Button variant="outline" size="sm" className="text-red-400" onClick={() => del(d.id)}><Trash2 className="w-3.5 h-3.5" /></Button>}
                 </div>
               </CardContent>
             </Card>
@@ -352,7 +355,7 @@ export default function Documents() {
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setDetail(null)}>Close</Button>
-                <Button onClick={() => { const d = detail; setDetail(null); openEdit(d) }}><Pencil className="w-3.5 h-3.5 mr-1" /> Edit</Button>
+                {canManage && <Button onClick={() => { const d = detail; setDetail(null); openEdit(d) }}><Pencil className="w-3.5 h-3.5 mr-1" /> Edit</Button>}
               </DialogFooter>
             </>
           )}

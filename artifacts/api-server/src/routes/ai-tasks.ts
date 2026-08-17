@@ -505,6 +505,20 @@ router.patch("/ai-tasks/:id/complete", requirePermission("ai_tasks.read"), async
       res.status(403).json({ error: "Forbidden" });
       return;
     }
+    // Row-level restriction: a restricted user may only complete tasks linked
+    // to their assigned clients/vendors (unlinked tasks are out of scope too).
+    const cvScope = await clientVendorScope(req);
+    if (cvScope !== null) {
+      const [task] = await db
+        .select({ id: generatedTasksTable.id, clientVendorId: generatedTasksTable.clientVendorId })
+        .from(generatedTasksTable)
+        .where(and(eq(generatedTasksTable.id, id), eq(generatedTasksTable.companyId, companyId)))
+        .limit(1);
+      if (!task || task.clientVendorId == null || !cvScope.includes(task.clientVendorId)) {
+        res.status(404).json({ error: "Task not found" });
+        return;
+      }
+    }
     const result = await completeTask(id, companyId, employeeId);
     if (!result.ok) {
       res.status(404).json({ error: "Task not found" });
