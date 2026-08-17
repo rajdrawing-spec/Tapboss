@@ -22,11 +22,19 @@ export const clientVendorsTable = pgTable("client_vendors", {
   notes: text("notes"),
   status: text("status").notNull().default("active"), // active|inactive
   customFields: jsonb("custom_fields").$type<Record<string, string>>(),
+  /**
+   * Legacy migration tracking: set when a row was imported from the legacy
+   * `customers` or `vendors` table. The pair (legacySource, legacySourceId)
+   * is unique, making re-runs fully idempotent.
+   */
+  legacySource: text("legacy_source"),   // 'customers' | 'vendors'
+  legacySourceId: integer("legacy_source_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (t) => [
   index("client_vendors_company_idx").on(t.companyId),
   index("client_vendors_type_idx").on(t.type),
+  uniqueIndex("client_vendors_legacy_source_idx").on(t.legacySource, t.legacySourceId),
 ]);
 
 /**

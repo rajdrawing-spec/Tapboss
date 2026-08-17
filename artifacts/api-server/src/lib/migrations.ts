@@ -1162,4 +1162,98 @@ export async function repairOrphanedAllocations(): Promise<void> {
   await db.execute(sql`ALTER TABLE documents ADD COLUMN IF NOT EXISTS client_vendor_id INTEGER`);
   await db.execute(sql`ALTER TABLE generated_tasks ADD COLUMN IF NOT EXISTS client_vendor_id INTEGER`);
   logger.info("Clients & Vendors tables ensured");
+
+  // ── Legacy data migration: customers + vendors → client_vendors ────────────
+  // Add tracking columns that make re-runs fully idempotent.
+  await db.execute(sql`ALTER TABLE client_vendors ADD COLUMN IF NOT EXISTS legacy_source TEXT`);
+  await db.execute(sql`ALTER TABLE client_vendors ADD COLUMN IF NOT EXISTS legacy_source_id INTEGER`);
+  // Partial unique index (only where legacy_source IS NOT NULL) so normal rows
+  // without a legacy origin are never rejected.
+  await db.execute(sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS client_vendors_legacy_source_idx
+      ON client_vendors (legacy_source, legacy_source_id)
+      WHERE legacy_source IS NOT NULL
+  `);
+
+  // Map legacy customers → client_vendors (type = 'client').
+  // Status mapping: vip → active, blocked → inactive; keep active/inactive.
+  // Address: concatenate city + state where available.
+  await db.execute(sql`
+    INSERT INTO client_vendors (
+      company_id, type, name, email, phone, address, notes, status,
+      legacy_source, legacy_source_id, created_at, updated_at
+    )
+    SELECT
+      company_id,
+      'client',
+      name,
+      email,
+      phone,
+      NULLIF(TRIM(COALESCE(city, '') || CASE WHEN city IS NOT NULL AND state IS NOT NULL THEN ', ' ELSE '' END || COALESCE(state, '')), ''),
+      notes,
+      CASE status
+        WHEN 'vip'     THEN 'active'
+        WHEN 'blocked' THEN 'inactive'
+        ELSE status
+      END,
+      'customers',
+      id,
+      created_at,
+      updated_at
+    FROM customers
+    ON CONFLICT (legacy_source, legacy_source_id) WHERE legacy_source IS NOT NULL
+    DO NOTHING
+  `);
+
+  // Map legacy vendors → client_vendors (type = 'vendor').
+  // Status mapping: blacklisted → inactive; keep active/inactive.
+  // category and gst_number stored in custom_fields JSON.
+  await db.execute(sql`
+    INSERT INTO client_vendors (
+      company_id, type, name, email, phone, address, notes, status,
+      custom_fields, legacy_source, legacy_source_id, created_at, updated_at
+    )
+    SELECT
+      company_id,
+      'vendor',
+      name,
+      email,
+      phone,
+      NULLIF(TRIM(COALESCE(city, '') || CASE WHEN city IS NOT NULL AND state IS NOT NULL THEN ', ' ELSE '' END || COALESCE(state, '')), ''),
+      NULL,
+      CASE status
+        WHEN 'blacklisted' THEN 'inactive'
+        ELSE status
+      END,
+      jsonb_strip_nulls(jsonb_build_object(
+        'category',   category,
+        'gst_number', gst_number
+      )),
+      'vendors',
+      id,
+      created_at,
+      updated_at
+    FROM vendors
+    ON CONFLICT (legacy_source, legacy_source_id) WHERE legacy_source IS NOT NULL
+    DO NOTHING
+  `);
+
+  // Record a single audit entry for this migration run (skip if already there).
+  await db.execute(sql`
+    INSERT INTO audit_logs (user_id, user_email, action, target_type, description, created_at)
+    SELECT
+      NULL,
+      'system',
+      'data.migration',
+      'client_vendors',
+      'Legacy customers and vendors migrated into unified client_vendors directory',
+      NOW()
+    WHERE NOT EXISTS (
+      SELECT 1 FROM audit_logs
+      WHERE action = 'data.migration'
+        AND target_type = 'client_vendors'
+    )
+  `);
+
+  logger.info("Legacy customers & vendors migrated into client_vendors");
 }
