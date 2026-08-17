@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { EmptyState } from "@/components/empty-state"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { CheckSquare, Check, X, RotateCcw } from "lucide-react"
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "")
@@ -15,6 +16,7 @@ interface GeneratedTask {
   description: string
   priority: "low" | "medium" | "high"
   status: string
+  clientVendorId?: number | null
   employeeId: number
   generatedDate: string
   source: string
@@ -124,6 +126,37 @@ export function ManagerApproval({ companyId }: { companyId: number }) {
     onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
   })
 
+  const { data: cvData } = useQuery<{ id: number; name: string; type: string }[]>({
+    queryKey: ["/api/ai-tasks/client-vendor-options", companyId],
+    queryFn: async () => {
+      const res = await fetch(
+        `${basePath}/api/ai-tasks/client-vendor-options?companyId=${companyId}`,
+        { credentials: "include" }
+      )
+      if (!res.ok) throw new Error(await res.text())
+      return res.json()
+    },
+  })
+  const cvOptions = cvData ?? []
+
+  const linkCvMutation = useMutation({
+    mutationFn: async ({ id, clientVendorId }: { id: number; clientVendorId: number | null }) => {
+      const res = await fetch(`${basePath}/api/ai-tasks/${id}/client-vendor`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ companyId, clientVendorId }),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      return res.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-tasks/pending-approval", companyId, runDate] })
+      toast({ title: "Task linked" })
+    },
+    onError: (err) => toast({ title: "Failed", description: String(err), variant: "destructive" }),
+  })
+
   const taskActionMutation = useMutation({
     mutationFn: async ({ id, action }: { id: number; action: "approve" | "reject" }) => {
       const res = await fetch(`${basePath}/api/ai-tasks/${id}/${action}`, {
@@ -189,6 +222,28 @@ export function ManagerApproval({ companyId }: { companyId: number }) {
                         Suggested: {task.assigneeName}
                         {task.department ? ` · ${task.department}` : ""}
                         {task.aiCustomizations?.meetingTitle ? ` · from "${task.aiCustomizations.meetingTitle}"` : ""}
+                      </div>
+                    )}
+                    {cvOptions.length > 0 && (
+                      <div className="mt-2 max-w-xs">
+                        <Select
+                          value={task.clientVendorId ? String(task.clientVendorId) : "none"}
+                          onValueChange={(v) =>
+                            linkCvMutation.mutate({ id: task.id, clientVendorId: v === "none" ? null : Number(v) })
+                          }
+                        >
+                          <SelectTrigger className="h-8 text-xs" data-testid={`select-cv-${task.id}`}>
+                            <SelectValue placeholder="Link client/vendor" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">No client/vendor</SelectItem>
+                            {cvOptions.map((cv) => (
+                              <SelectItem key={cv.id} value={String(cv.id)}>
+                                {cv.type === "vendor" ? "Vendor: " : "Client: "}{cv.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
                     )}
                   </div>

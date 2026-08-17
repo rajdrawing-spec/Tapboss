@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { requirePermission } from "../middleware/authz";
 import { canAccessCompany } from "../lib/company-scope";
-import { clientVendorScope } from "../lib/client-vendor-scope";
+import { clientVendorScope, accessibleClientVendor } from "../lib/client-vendor-scope";
 import { inArray } from "drizzle-orm";
 import {
   listTemplates,
@@ -45,7 +45,7 @@ import {
 } from "../lib/ai-tasks/prompts.service";
 import { getUnreadAiTasksCount } from "../lib/ai-tasks/notification.service";
 import { eq, and, desc, sql } from "drizzle-orm";
-import { db, generatedTasksTable, employeesTable } from "@workspace/db";
+import { db, generatedTasksTable, employeesTable, clientVendorsTable } from "@workspace/db";
 
 const router = Router();
 
@@ -249,6 +249,7 @@ router.get("/ai-tasks/pending-approval", requirePermission("ai_tasks.manage"), a
         source: generatedTasksTable.source,
         aiCustomizations: generatedTasksTable.aiCustomizations,
         dueDate: generatedTasksTable.dueDate,
+        clientVendorId: generatedTasksTable.clientVendorId,
         completedAt: generatedTasksTable.completedAt,
         approvedBy: generatedTasksTable.approvedBy,
         approvedAt: generatedTasksTable.approvedAt,
@@ -324,6 +325,90 @@ router.patch("/ai-tasks/:id/approve", requirePermission("ai_tasks.manage"), asyn
   } catch (e) {
     req.log.error(e);
     res.status(500).json({ error: "Failed to approve task" });
+  }
+});
+
+// Strict positive-integer parser: rejects "1junk", "1.9", negatives.
+function strictId(v: unknown): number | null {
+  const s = String(v);
+  if (!/^\d+$/.test(s)) return null;
+  const n = parseInt(s, 10);
+  return n > 0 ? n : null;
+}
+
+// Client/vendor options for the approval UI, guarded by ai_tasks.manage
+// (managers may lack clients_vendors.view); still company- and row-scoped.
+router.get("/ai-tasks/client-vendor-options", requirePermission("ai_tasks.manage"), async (req, res) => {
+  try {
+    const companyId = strictId(req.query.companyId);
+    if (!companyId || !canAccessCompany(req, companyId)) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+    const cvScope = await clientVendorScope(req);
+    if (cvScope !== null && cvScope.length === 0) {
+      res.json([]);
+      return;
+    }
+    const conds = [
+      eq(clientVendorsTable.companyId, companyId),
+      eq(clientVendorsTable.status, "active"),
+      ...(cvScope !== null ? [inArray(clientVendorsTable.id, cvScope)] : []),
+    ];
+    const rows = await db
+      .select({ id: clientVendorsTable.id, name: clientVendorsTable.name, type: clientVendorsTable.type })
+      .from(clientVendorsTable)
+      .where(and(...conds))
+      .orderBy(clientVendorsTable.name);
+    res.json(rows);
+  } catch (e) {
+    req.log.error(e);
+    res.status(500).json({ error: "Failed to list client/vendor options" });
+  }
+});
+
+router.patch("/ai-tasks/:id/client-vendor", requirePermission("ai_tasks.manage"), async (req, res) => {
+  try {
+    const id = strictId(req.params.id);
+    const companyId = strictId(req.body.companyId);
+    if (!id || !companyId || !canAccessCompany(req, companyId)) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+    const raw = req.body.clientVendorId;
+    const clientVendorId = raw === null || raw === undefined || raw === "" ? null : strictId(raw);
+    if (raw !== null && raw !== undefined && raw !== "" && clientVendorId === null) {
+      res.status(400).json({ error: "Invalid clientVendorId" });
+      return;
+    }
+    const [task] = await db
+      .select({ id: generatedTasksTable.id, companyId: generatedTasksTable.companyId })
+      .from(generatedTasksTable)
+      .where(and(eq(generatedTasksTable.id, id), eq(generatedTasksTable.companyId, companyId)))
+      .limit(1);
+    if (!task) {
+      res.status(404).json({ error: "Task not found" });
+      return;
+    }
+    if (clientVendorId !== null) {
+      const cv = await accessibleClientVendor(req, clientVendorId);
+      if (!cv) {
+        res.status(404).json({ error: "Client/Vendor not found" });
+        return;
+      }
+      if (cv.companyId !== task.companyId) {
+        res.status(400).json({ error: "Client/Vendor belongs to a different company" });
+        return;
+      }
+    }
+    await db
+      .update(generatedTasksTable)
+      .set({ clientVendorId, updatedAt: new Date() })
+      .where(eq(generatedTasksTable.id, id));
+    res.json({ ok: true, clientVendorId });
+  } catch (e) {
+    req.log.error(e);
+    res.status(500).json({ error: "Failed to update task association" });
   }
 });
 
