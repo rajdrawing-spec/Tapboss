@@ -1,0 +1,914 @@
+TAPBOSS PRODUCT & CATALOG UPDATE — STRICT ADDITIVE IMPLEMENTATION
+CRITICAL RULE — DO NOT DISTURB EXISTING TAPBOSS
+
+THIS IS AN ADDITIONAL FEATURE ONLY. DO NOT BREAK, REMOVE, REWRITE OR MIGRATE EXISTING TAPBOSS FUNCTIONALITY OR DATA.
+
+Before making any changes:
+
+Inspect the existing Product & Catalog implementation.
+Keep all existing products and product data safe.
+Do not delete or overwrite existing products.
+Do not break existing Orders, Inventory, Customers, Commerce, Shipping, Finance or other modules.
+Do not replace the existing database or Product system.
+Reuse the existing Product database structure wherever possible.
+Add new fields/features only through safe, backward-compatible migrations if required.
+Do not change existing APIs or UI behavior unless necessary for this new feature.
+Test the existing Product section after implementation.
+
+This is an enhancement of the existing Product & Catalog workflow, not a rebuild.
+
+PRODUCT & CATALOG IMPROVEMENT
+
+The current Excel export format is not suitable for our operational workflow.
+
+We will provide a sample Excel file. Once provided, inspect that sample carefully and create the TapBoss Excel export in the same professional structure, column order, organization and workflow style, while mapping the data from the existing TapBoss product system.
+
+Do not guess the final Excel structure before reviewing the sample file.
+
+MAIN PRODUCT WORKFLOW
+
+We may receive products in multiple ways:
+
+Method 1 — Add Product Manually
+
+User clicks:
+
+Products → Add Product
+
+The experience should be similar to a professional Shopify-style product creation workflow.
+
+Fields can include:
+
+Product Name
+SKU
+Brand
+Category
+Subcategory
+Description
+Price
+MRP / Compare-at Price
+Cost Price, if authorized internally
+GST / Tax
+HSN
+Stock
+Color
+Size
+Weight
+Dimensions
+Barcode
+Product Status
+Tags
+Images
+
+Do not force unnecessary fields if they are not required.
+
+METHOD 2 — AI PRODUCT CREATION FROM IMAGES
+
+We often have multiple product images.
+
+The user should be able to:
+
+Upload one or multiple images.
+Select all images belonging to the same product.
+Click:
+
+✨ Create Product with AI
+
+The AI should analyze all uploaded images together as one product, not create a separate product for every image.
+
+The AI should automatically suggest:
+
+Product Name
+Product Type
+Category
+Subcategory
+Description
+Color
+Material, where visually identifiable
+Style
+Suggested SKU
+Tags
+Other useful product attributes
+
+The user must be able to review and edit everything before saving.
+
+Important
+
+Do not automatically publish a product without review.
+
+Recommended workflow:
+
+Upload Images → AI Analysis → Product Draft → Review/Edit → Save Product
+
+MULTIPLE PRODUCT IMAGE SUPPORT
+
+A product may have:
+
+Main Image
+Image 2
+Image 3
+Image 4
+Additional Images
+
+The first/main image should be the primary product image.
+
+All uploaded images must remain connected to the same Product ID.
+
+Example:
+
+Product: Linen Half Sleeve Shirt
+
+Main Image → Front
+Image 2 → Back
+Image 3 → Side
+Image 4 → Detail
+
+Do not create four different products.
+
+BULK IMAGE PRODUCT CREATION
+
+We may also upload images for multiple products.
+
+Create a workflow that supports:
+
+Option A — Manual grouping
+
+The user uploads many images and groups them into products.
+
+Example:
+
+Group 1 → Product A images
+Group 2 → Product B images
+Group 3 → Product C images
+
+Then AI creates one product draft per group.
+
+Option B — AI grouping
+
+Provide an optional:
+
+✨ Detect and Group Products with AI
+
+The AI can suggest which images belong together.
+
+However, the user must review the grouping before products are created.
+
+SKU GENERATION
+
+When creating a new product, automatically generate an SKU.
+
+Example format:
+
+BRAND-CATEGORY-PRODUCT-001
+
+or use the existing TapBoss SKU format if one already exists.
+
+Requirements:
+
+SKU must be unique.
+Never overwrite an existing SKU.
+Automatically check duplicates.
+User can manually edit the SKU before saving.
+If SKU changes, existing products must not be affected.
+PRODUCT LIST VIEW
+
+Improve the Product list so it is easy to understand visually.
+
+The first column should be:
+
+PRODUCT IMAGE
+
+Show a thumbnail of the product's main image.
+
+Recommended table:
+
+Image	Product	SKU	Brand	Category	Price	MRP	Stock	Status	Actions
+
+The product image thumbnail should make it easy for our team to visually identify the product immediately.
+
+Clicking the product should open the complete product details.
+
+EXCEL EXPORT — IMPORTANT
+
+We use the Product Catalog to prepare and export product data for websites and other systems.
+
+Add:
+
+Export Products → Excel (.xlsx)
+
+The exported Excel file should be clean, professional and operationally useful.
+
+The final structure should follow the sample Excel file that we will provide.
+
+Image handling in Excel
+
+The Excel should support both:
+
+1. Product Image Preview
+
+The first column should contain the product's main image as a visible thumbnail where technically supported.
+
+Example:
+
+| Product Image | Product Name | SKU | Price | ... |
+|---|---|---|---|
+| [Image Thumbnail] | Linen Shirt | ABC-001 | ₹999 | ... |
+
+This allows our team to easily recognize the product visually.
+
+2. Image URL Columns
+
+Also include image links as separate columns.
+
+Example:
+
+Main Image URL
+Image 2 URL
+Image 3 URL
+Image 4 URL
+Additional Image URLs
+
+Example structure:
+
+Product Image	Product Name	SKU	Description	Price	MRP	Stock	Color	Size	Main Image URL	Image 2 URL	Image 3 URL
+
+The actual column names and order must be finalized after reviewing our sample Excel file.
+
+PRODUCT → EXCEL → WEBSITE WORKFLOW
+
+The intended workflow is:
+
+STEP 1 — Create Product
+
+Create manually or upload product images.
+
+STEP 2 — AI Analysis
+
+AI analyzes the product and creates a draft with suggested information.
+
+STEP 3 — Human Review
+
+Our team reviews:
+
+Product name
+SKU
+Category
+Description
+Price
+Stock
+Attributes
+Images
+STEP 4 — Save to TapBoss
+
+The product is saved in the existing TapBoss Product system.
+
+STEP 5 — Export
+
+User selects products and clicks:
+
+Export to Excel
+
+STEP 6 — Excel Catalog
+
+The Excel contains:
+
+Product information
+Main product image thumbnail
+Additional image links
+All required attributes
+Correct SKU
+Clean professional formatting
+STEP 7 — Website / Store Import
+
+The exported Excel can then be used for website/store product upload or further processing.
+
+The export should be structured so that product data and image URLs are easy to map into Shopify or other e-commerce websites in the future.
+
+SHOPIFY-STYLE PRODUCT EXPERIENCE
+
+Use Shopify as a workflow inspiration only.
+
+The TapBoss Product creation experience should be simple and professional:
+
+Product Information
+
+Title
+Description
+
+Media
+
+Upload multiple images
+Drag/drop images
+Select main image
+Reorder images
+AI image analysis
+
+Organization
+
+Brand
+Category
+Subcategory
+Tags
+
+Pricing
+
+Price
+MRP / Compare Price
+Cost, based on permissions
+
+Inventory
+
+SKU
+Barcode
+Stock
+
+Attributes
+
+Color
+Size
+Weight
+Dimensions
+HSN
+GST
+
+Status
+
+Draft
+Active
+Archived, only if the existing system supports this safely
+DATA SAFETY REQUIREMENTS
+
+Before implementing:
+
+Inspect existing Product tables and relationships.
+Reuse existing product IDs.
+Reuse existing image storage if available.
+Do not duplicate existing products.
+Do not regenerate SKUs for existing products.
+Do not modify historical product data.
+Do not break products already connected to orders.
+Do not delete old product images.
+Do not change existing inventory calculations.
+Do not disturb existing exports until the new export is tested.
+
+If a database migration is needed:
+
+Make it additive.
+Keep old fields working.
+Preserve existing records.
+Test migration safely before production.
+REQUIRED IMPLEMENTATION PROCESS
+Phase 1 — Inspect
+
+First inspect:
+
+Current Product database schema
+Current product image handling
+SKU generation
+Categories and brands
+Existing Excel export
+Inventory logic
+Product/order relationships
+Current APIs
+
+Then provide an Impact Report explaining:
+
+What already exists.
+What can be reused.
+What needs to be added.
+Which files will change.
+Which database tables will change.
+Any risk to existing data.
+Phase 2 — Do Not Change Existing Logic Unnecessarily
+
+Only add what is required.
+
+Phase 3 — Build
+
+Implement:
+
+Better product creation
+Multiple image support
+AI product analysis
+AI product grouping
+Unique SKU generation
+Product image thumbnails in the product list
+Improved Excel export
+Image URL columns
+Selective product export
+Phase 4 — Testing
+
+Test:
+
+Existing products still work.
+Existing orders still work.
+Existing inventory still works.
+Existing product images still work.
+Existing SKUs remain unchanged.
+Excel export works.
+Multiple images export correctly.
+Image URLs are accessible.
+New AI product creation does not create duplicates.
+No existing TapBoss functionality is broken.
+FINAL RULE
+
+DO NOT REBUILD THE PRODUCT & CATALOG MODULE.
+
+FIRST INSPECT WHAT IS ALREADY BUILT.
+
+REUSE EXISTING DATA, TABLES, APIs AND COMPONENTS WHERE POSSIBLE.
+
+THIS IS AN ADDITIONAL IMPROVEMENT TO MAKE PRODUCT CREATION, MULTI-IMAGE AI ANALYSIS AND EXCEL EXPORT MORE PROFESSIONAL.
+
+NO EXISTING TAPBOSS DATA SHOULD BE LOST, DELETED OR DISTURBED.
+
+For the exact Excel columns and layout, upload your sample Excel here. I can then prepare the next instruction for Replit based exactly on your sample, including the column order, image column, Image 1 / Image 2 links, required fields, and a professional export format.
+
+1wzYl5H1qwJI
+
+Unable to display visualization
+
+can you tell to replit update no change any thing creaet do THIS IS AN ADDITIONAL FEATURE ONLY. DO NOT BREAK, REMOVE, REWRITE OR MIGRATE EXISTING TAPBOSS FUNCTIONALITY OR DATA. and only modefy exicit product section dot make new again with dfrent place product catalagu creaet exel foramt is worng right i will sample exel so please preare simlier expert style and curenlty when upload image automentic ccreate sku and other thing but we muttiple can and it auo metically creat eprodcut then after we expro to exel. also that show prodcut image frist row so we can easly understand . and also there image 1 image 2 image link add in exel so sugget what proeces to d that our job create product and exprot to exel to web . this section shoul like shopife add prodect kling of job similer autometice add imges in when upled one on exel sheet . please check attached file for refrence what format exel follow for exprot
+
+Yes. I understand exactly what you want: do not create a new Product/Catalog module or put it in a different place. Replit must only modify and improve the existing Product section, while preserving all current products, data, APIs, inventory, orders, and functionality.
+
+I’m also checking your attached Excel/CSV reference so the export instruction can follow its actual column structure and workflow.
+
+I checked your attached reference file. It is a 45-column product import/export template, currently with headers only. The important structure includes:
+
+Product Code
+Amazon ASIN
+Name
+Sku Id
+Selling Price
+MRP
+Cost Price
+Quantity
+Packaging dimensions and weight
+GST %
+Image 1 through Image 10
+Video 1 and Video 2
+Product Type
+Size Type
+Size
+Colour
+Description
+Return/Exchange Condition
+Visibility
+Size Chart
+Pickup Address Code
+HSN Code
+Customisation ID
+Associated Pixel
+Custom attributes
+Collections
+
+So Replit should use this as the reference structure for the Excel export, while also improving it with a visible product image preview as the first column if technically supported.
+
+Copy and paste this to Replit:
+
+PRODUCT & CATALOG UPDATE — MODIFY EXISTING SECTION ONLY
+CRITICAL INSTRUCTION
+
+THIS IS AN ADDITIONAL FEATURE ONLY. DO NOT BREAK, REMOVE, REWRITE OR MIGRATE EXISTING TAPBOSS FUNCTIONALITY OR DATA.
+
+DO NOT CREATE A NEW PRODUCT OR CATALOG MODULE.
+
+DO NOT CREATE THIS FEATURE IN A DIFFERENT PLACE.
+
+Only inspect, modify, and improve the existing TapBoss Product / Product Catalog section where it currently exists.
+
+The existing Product section must remain the same location in the navigation and continue using the existing:
+
+Product database
+Product IDs
+Existing products
+Product APIs
+Inventory
+SKU logic
+Product images
+Orders
+Customers
+Existing relationships
+
+Do not create a duplicate Product system, duplicate product table, duplicate inventory system, or separate catalog page.
+
+STEP 1 — INSPECT BEFORE MODIFYING
+
+Before writing code, inspect the current Product & Catalog implementation.
+
+Identify:
+
+Existing Product database tables.
+Existing product image storage.
+Existing SKU generation logic.
+Existing categories and brands.
+Existing inventory logic.
+Existing Excel export functionality.
+Existing product APIs.
+Existing product/order relationships.
+Existing UI components and routes.
+
+Then modify the existing Product section only.
+
+Do not rebuild it from scratch.
+
+Do not move it to another menu or create another Product Management section.
+
+GOAL
+
+Improve the existing Product & Catalog workflow so our team can:
+
+Upload Product Images → AI Creates Product Information → Review/Edit → Save to Existing TapBoss Product Catalog → Select Products → Export Professional Excel → Use Excel/Image Links for Website or Store Import
+
+The workflow should feel similar to a professional Shopify-style Add Product experience, but it must remain part of the existing TapBoss Product section and follow the existing TapBoss design.
+
+MULTIPLE PRODUCT IMAGE UPLOAD
+
+Currently, when images are uploaded, the system can automatically create SKU and other product information.
+
+Improve this workflow.
+
+A user must be able to upload multiple images for one product.
+
+Example:
+
+Product A:
+
+Front image
+Back image
+Side image
+Detail image
+
+These images must all belong to one product, not create multiple products.
+
+Workflow:
+
+Upload Images → Group Images as One Product → AI Analyze All Images → Create One Product Draft
+
+The AI should analyze the group and suggest:
+
+Product Name
+SKU
+Product Type
+Category
+Subcategory
+Colour
+Size, if identifiable
+Description
+Material, if identifiable
+Tags
+Other useful attributes
+
+The user must review and edit before saving.
+
+Do not automatically publish or permanently save incorrect AI-generated data without review.
+
+MULTIPLE PRODUCTS
+
+Also support uploading images for multiple products.
+
+Recommended workflow:
+
+Option 1 — Manual Grouping
+
+User uploads many images.
+
+The user can group images:
+
+Product Group 1
+Product Group 2
+Product Group 3
+
+AI creates one product draft for each group.
+
+Option 2 — AI Grouping
+
+Add an optional:
+
+✨ Detect and Group Products with AI
+
+AI can suggest which images belong to the same product.
+
+The user must review the suggested grouping before products are created.
+
+Do not automatically create duplicate products.
+
+PRODUCT IMAGES
+
+Inside the existing Product section:
+
+Support multiple images per product.
+Allow selecting the main image.
+Allow drag-and-drop reordering.
+Preserve existing product images.
+Do not delete old images.
+All images must remain connected to the existing Product ID.
+
+The first image should normally be the Main Product Image.
+
+PRODUCT LIST
+
+Improve the existing Product list.
+
+The first column should show the product image thumbnail, so our team can quickly identify the product visually.
+
+Recommended existing table enhancement:
+
+Product Image	Product Name	SKU	Brand	Category	Selling Price	MRP	Stock	Status	Actions
+
+Do not create a separate product list.
+
+Modify the existing Product list/table.
+
+SKU
+
+Continue using the existing SKU logic if it already works.
+
+For new AI-created products:
+
+Generate SKU automatically.
+Ensure SKU is unique.
+Check for duplicates.
+Allow the user to edit the SKU before saving.
+Never regenerate or change SKUs for existing products.
+Never overwrite an existing product because of a matching SKU.
+EXCEL EXPORT — USE ATTACHED REFERENCE FORMAT
+
+The attached reference CSV defines the expected product data structure.
+
+The export should follow this structure and column terminology where applicable:
+
+Product Image Preview
+Product Code
+Amazon ASIN
+Name
+Sku Id
+Selling Price
+MRP
+Cost Price
+Quantity
+Packaging Length (in cm)
+Packaging Breadth (in cm)
+Packaging Height (in cm)
+Packaging Weight (in kg)
+GST %
+Image 1
+Image 2
+Image 3
+Image 4
+Image 5
+Image 6
+Image 7
+Image 8
+Image 9
+Image 10
+Video 1
+Video 2
+Product Type
+Size Type
+Size
+Colour
+Description
+Return/Exchange Condition
+Visibility
+Size Chart
+Pickup Address Code
+HSN Code
+Customisation Id
+Associated Pixel
+attr1_Attribute Name
+attr2_Attribute Name
+attr3_Attribute Name
+attr4_Attribute Name
+attr5_Attribute Name
+collection_1
+collection_2
+collection_3
+
+The original reference contains 45 data columns. The optional Product Image Preview should be added as the first visual column only if it does not break compatibility with the target import workflow.
+
+IMPORTANT IMAGE EXPORT BEHAVIOR
+
+When exporting products to Excel:
+
+Product Image Preview
+
+The first visible column should ideally show a small thumbnail of the main product image.
+
+Example:
+
+Product Image	Product Code	Name	SKU	Selling Price
+Product Thumbnail	PRD001	Linen Shirt	LIN-001	₹999
+
+This helps our team visually understand which product each row represents.
+
+Image URL Columns
+
+The existing reference format must also be preserved:
+
+Image 1
+Image 2
+Image 3
+Image 4
+Image 5
+Image 6
+Image 7
+Image 8
+Image 9
+Image 10
+
+Each image column should contain the correct accessible image URL for that product image.
+
+Example:
+
+Image 1 = Main product image URL
+Image 2 = Second product image URL
+Image 3 = Third product image URL
+
+When the user uploads multiple images for one product, those images should automatically map into:
+
+Image 1 → Image 2 → Image 3 → etc.
+
+based on the selected image order.
+
+The main image should normally become Image 1.
+
+AUTOMATIC IMAGE → EXCEL WORKFLOW
+
+The process should work like this:
+
+STEP 1 — Add Product
+
+User opens the existing:
+
+Products / Product Catalog → Add Product
+
+Do not create a new Add Product page elsewhere.
+
+STEP 2 — Upload Images
+
+User uploads one or multiple images.
+
+STEP 3 — Group Images
+
+If multiple images belong to one product, they are grouped together.
+
+STEP 4 — AI Analysis
+
+AI analyzes all images belonging to that product.
+
+STEP 5 — Product Draft
+
+AI automatically fills available information:
+
+Name
+Suggested SKU
+Colour
+Product Type
+Description
+Category
+Attributes
+STEP 6 — Review
+
+User reviews and edits the product.
+
+STEP 7 — Save
+
+Save the product into the existing TapBoss Product database.
+
+STEP 8 — Export
+
+User selects one, multiple, or all products.
+
+Click:
+
+Export to Excel
+
+STEP 9 — Automatic Excel Mapping
+
+The system automatically creates the Excel export.
+
+For every product:
+
+Main image → Product Image Preview + Image 1 URL
+Second uploaded image → Image 2 URL
+Third uploaded image → Image 3 URL
+Continue automatically up to Image 10
+
+The user should not need to manually copy image URLs into Excel.
+
+EXCEL EXPORT REQUIREMENTS
+
+The exported Excel file should be:
+
+.xlsx
+Professionally formatted
+Easy to read
+One product per row
+Header row frozen
+Filters enabled
+Proper column widths
+Image thumbnail column where supported
+Product information mapped correctly
+Image URLs automatically populated
+Compatible with future website/store import workflows
+
+The export must not change or damage existing product data.
+
+WEBSITE / STORE WORKFLOW
+
+The purpose is to make the operational workflow simple:
+
+Product Images
+
+↓
+
+AI Creates Product Draft
+
+↓
+
+Team Reviews Product
+
+↓
+
+Save in Existing TapBoss Catalog
+
+↓
+
+Select Products
+
+↓
+
+Export Professional Excel
+
+↓
+
+Excel Contains Product Data + Image URLs
+
+↓
+
+Import / Map into Website or E-commerce Store
+
+This should make TapBoss the central location where our team creates and manages product information.
+
+DATA SAFETY
+
+Before implementation:
+
+Do not delete existing products.
+Do not modify existing product IDs.
+Do not regenerate existing SKUs.
+Do not delete existing product images.
+Do not disturb existing inventory.
+Do not break product/order relationships.
+Do not replace existing Product APIs.
+Do not create duplicate products.
+Do not create a second Product Catalog.
+Do not change historical product data unnecessarily.
+
+If new database fields are required:
+
+Add them safely.
+Use additive migrations.
+Keep old records working.
+Keep existing APIs backward compatible.
+TESTING
+
+Before marking this update complete, test:
+
+Existing System
+Existing products still display correctly.
+Existing product images still work.
+Existing SKUs remain unchanged.
+Existing inventory still works.
+Existing orders remain connected to products.
+Existing Product Catalog remains in the same location.
+Existing Add Product workflow is not broken.
+New Features
+One image can create one product draft.
+Multiple images can create one product draft.
+Multiple product groups work.
+AI does not create unnecessary duplicates.
+Main image maps to Image 1.
+Additional images map correctly to Image 2–Image 10.
+Product thumbnail appears in the product list.
+Excel exports correctly.
+Existing reference column structure is followed.
+Image URLs are automatically included.
+Exported Excel can be opened correctly.
+FINAL REPLIT RULE
+
+DO NOT CREATE A NEW PRODUCT SYSTEM.
+
+DO NOT CREATE A NEW CATALOG PAGE IN A DIFFERENT LOCATION.
+
+ONLY MODIFY AND IMPROVE THE EXISTING TAPBOSS PRODUCT / PRODUCT CATALOG SECTION.
+
+FIRST INSPECT WHAT IS ALREADY BUILT.
+
+REUSE EXISTING DATABASE TABLES, PRODUCT IDs, APIs, IMAGE STORAGE, INVENTORY AND UI COMPONENTS WHERE POSSIBLE.
+
+THIS IS AN ADDITIONAL IMPROVEMENT ONLY.
+
+NO EXISTING TAPBOSS FUNCTIONALITY OR DATA SHOULD BE BROKEN, DELETED, REWRITTEN OR DISTURBED.
