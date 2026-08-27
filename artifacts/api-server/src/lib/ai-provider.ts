@@ -130,18 +130,40 @@ const ollamaProvider: AiProvider = {
 
 // ── Gemini provider (Replit AI integrations proxy — no key needed) ────────────
 
-async function generateGeminiContent(params: any) {
-  // Retry on 429 rate-limit / quota errors with short exponential backoff.
-  // The free tier is heavily throttled; a few retries often lets the call through.
+async function generateGeminiContent(params: any, fallbackModels: string[] = []) {
+  // Bound slow upstream calls and move transiently overloaded requests to an
+  // alternate Gemini model instead of leaving the product editor spinning.
   const maxRetries = 3;
+  const models = [params.model, ...fallbackModels];
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      return await geminiAi.models.generateContent(params);
+      const model = models[Math.min(attempt - 1, models.length - 1)];
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        return await Promise.race([
+          geminiAi.models.generateContent({ ...params, model }),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(Object.assign(new Error("Gemini request timed out"), { status: 504 })), 45_000);
+          }),
+        ]);
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
     } catch (e: any) {
       const status = e?.status || e?.code || e?.response?.status;
       const message = String(e?.message || "");
-      const isRateLimit = status === 429 || message.includes("429") || message.includes("Quota exceeded") || message.includes("rate limit");
-      if (!isRateLimit || attempt === maxRetries) throw e;
+      const isTransient =
+        status === 429 ||
+        status === 503 ||
+        status === 504 ||
+        message.includes("429") ||
+        message.includes("503") ||
+        message.includes("high demand") ||
+        message.includes("Quota exceeded") ||
+        message.includes("rate limit") ||
+        message.includes("timed out");
+      const canTryFallback = fallbackModels.length > 0 && attempt < models.length;
+      if ((!isTransient && !canTryFallback) || attempt === maxRetries) throw e;
       const delay = Math.min(1000 * 2 ** (attempt - 1), 8000);
       await new Promise((r) => setTimeout(r, delay));
     }
@@ -177,13 +199,13 @@ export const geminiProvider: AiProvider = {
       },
     ];
     const response = await generateGeminiContent({
-      model: "gemini-flash-latest",
+      model: "gemini-flash-lite-latest",
       contents,
       config: {
         maxOutputTokens: 4096,
         systemInstruction: systemPrompt,
       },
-    });
+    }, ["gemini-flash-latest"]);
     return response.text ?? "";
   },
 };

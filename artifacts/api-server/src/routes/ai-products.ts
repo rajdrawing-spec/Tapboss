@@ -719,7 +719,14 @@ router.post("/ai-products/analyze-draft", requirePermission("inventory.manage"),
     res.json({ analysis, autoFill });
   } catch (e) {
     req.log.error(e);
-    res.status(500).json({ error: "Image analysis failed" });
+    const status = Number((e as any)?.status || (e as any)?.code);
+    const message = String((e as Error)?.message || "");
+    const retryable = status === 429 || status === 503 || status === 504 || /high demand|timed out|rate limit/i.test(message);
+    res.status(retryable ? 503 : 500).json({
+      error: retryable
+        ? "AI image analysis is temporarily busy. Please try again in a moment."
+        : "Image analysis failed",
+    });
   }
 });
 

@@ -296,6 +296,22 @@ describe("product catalog API hardening", () => {
     expect(mocks.analyzeProductImages).toHaveBeenCalledWith([TEST_PNG_DATA_URL]);
   });
 
+  it("returns a clear retryable response when the vision model is temporarily overloaded", async () => {
+    mocks.analyzeProductImages.mockRejectedValueOnce(
+      Object.assign(new Error("This model is currently experiencing high demand"), { status: 503 }),
+    );
+
+    const response = await request(app())
+      .post("/ai-products/analyze-draft")
+      .set("x-company-id", "7")
+      .set("x-permission", "inventory.manage")
+      .send({ companyId: 7, images: [TEST_PNG_DATA_URL] });
+
+    expect(response.status).toBe(503);
+    expect(response.body.error).toContain("temporarily busy");
+    expect(mocks.dbInsertValues).toHaveLength(0);
+  });
+
   it("rejects oversized draft image groups", async () => {
     const response = await request(app())
       .post("/ai-products/analyze-draft")
