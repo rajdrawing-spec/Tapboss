@@ -62,12 +62,22 @@ export const productImagesTable = pgTable("product_images", {
   companyId: integer("company_id").notNull(),
   objectPath: text("object_path").notNull(),
   isPrimary: boolean("is_primary").notNull().default(false),
+  sortOrder: integer("sort_order").notNull().default(0),
   altText: text("alt_text"),
   aiTags: jsonb("ai_tags").$type<string[]>().default([]),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (t) => [
   index("product_images_product_id_idx").on(t.productId),
   index("product_images_company_id_idx").on(t.companyId),
+]);
+
+export const productMediaUploadsTable = pgTable("product_media_uploads", {
+  id: serial("id").primaryKey(),
+  companyId: integer("company_id").notNull(),
+  objectPath: text("object_path").notNull().unique(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (t) => [
+  index("product_media_uploads_company_id_idx").on(t.companyId),
 ]);
 
 export const productAiMetadataTable = pgTable("product_ai_metadata", {

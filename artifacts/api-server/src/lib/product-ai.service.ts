@@ -1,5 +1,5 @@
 import { db, productsTable, productAiMetadataTable, productImagesTable, productVariantsTable, productMarketplaceTemplatesTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, asc, desc, inArray } from "drizzle-orm";
 import { getActiveProvider, AiProvider, geminiProvider, getConfig } from "./ai-provider";
 import { ObjectStorageService } from "./objectStorage";
 import { randomUUID } from "crypto";
@@ -577,32 +577,180 @@ export async function importProductsXlsx(companyId: number, buffer: Buffer): Pro
   return stats;
 }
 
-export async function exportProductsXlsx(companyId: number): Promise<Buffer> {
-  const rows = await db.select().from(productsTable).where(eq(productsTable.companyId, companyId));
-  const data = rows.map((p) => ({
-    "Product Name": p.name,
-    "SKU": p.sku,
-    "Barcode": p.barcode || "",
-    "Brand": p.brand || "",
-    "Category": p.category,
-    "Subcategory": p.subcategory || "",
-    "Description": p.description || "",
-    "Short Description": p.shortDescription || "",
-    "Price": p.price,
-    "MRP": p.mrp,
-    "Cost Price": p.costPrice,
-    "GST (%)": p.gst,
-    "Stock Quantity": p.stockQuantity,
-    "Reorder Level": p.reorderLevel,
-    "Weight": p.weight || "",
-    "Dimensions": p.dimensions || "",
-    "HSN": p.hsn || "",
-    "Warehouse Location": p.warehouseLocation || "",
-    "Status": p.status,
-    "Created At": p.createdAt.toISOString(),
-  }));
+export async function exportProductsXlsx(companyId: number, productIds?: number[]): Promise<Buffer> {
+  const uniqueIds = productIds ? Array.from(new Set(productIds)) : undefined;
+  const rows = await db.select().from(productsTable).where(and(
+    eq(productsTable.companyId, companyId),
+    uniqueIds ? inArray(productsTable.id, uniqueIds) : undefined,
+  ));
+  if (uniqueIds && rows.length !== uniqueIds.length) {
+    throw new Error("PRODUCT_SCOPE_MISMATCH");
+  }
+  const rowIds = rows.map(row => row.id);
+  const images = rowIds.length
+    ? await db.select().from(productImagesTable)
+      .where(and(eq(productImagesTable.companyId, companyId), inArray(productImagesTable.productId, rowIds)))
+      .orderBy(desc(productImagesTable.isPrimary), asc(productImagesTable.sortOrder), asc(productImagesTable.id))
+    : [];
+  const metadata = rowIds.length
+    ? await db.select().from(productAiMetadataTable)
+      .where(and(eq(productAiMetadataTable.companyId, companyId), inArray(productAiMetadataTable.productId, rowIds)))
+    : [];
+  return createProductCatalogWorkbook(rows, images, metadata);
+}
+
+export const PRODUCT_CATALOG_EXPORT_HEADERS = [
+  "Product Image Preview", "Product Code", "Amazon ASIN", "Name", "Sku Id",
+  "Selling Price", "MRP", "Cost Price", "Quantity",
+  "Packaging Length (in cm)", "Packaging Breadth (in cm)", "Packaging Height (in cm)",
+  "Packaging Weight (in kg)", "GST %",
+  ...Array.from({ length: 10 }, (_, index) => `Image ${index + 1}`),
+  "Video 1", "Video 2", "Product Type", "Size Type", "Size", "Colour", "Description",
+  "Return/Exchange Condition", "Visibility", "Size Chart", "Pickup Address Code",
+  "HSN Code", "Customisation Id", "Associated Pixel",
+  "attr1_Attribute Name", "attr2_Attribute Name", "attr3_Attribute Name",
+  "attr4_Attribute Name", "attr5_Attribute Name",
+  "collection_1", "collection_2", "collection_3",
+];
+
+export function createProductCatalogWorkbook(
+  rows: Array<typeof productsTable.$inferSelect>,
+  images: Array<typeof productImagesTable.$inferSelect>,
+  metadata: Array<typeof productAiMetadataTable.$inferSelect>,
+): Buffer {
+  const imagesByProduct = new Map<number, typeof images>();
+  const orderedImages = [...images].sort((left, right) =>
+    Number(Boolean(right.isPrimary)) - Number(Boolean(left.isPrimary))
+    || left.sortOrder - right.sortOrder
+    || left.id - right.id
+  );
+  for (const image of orderedImages) {
+    const list = imagesByProduct.get(image.productId) ?? [];
+    list.push(image);
+    imagesByProduct.set(image.productId, list);
+  }
+  const metadataByProduct = new Map(metadata.map(item => [item.productId, item]));
+  const attribute = (attributes: Record<string, string> | null | undefined, ...keys: string[]) => {
+    for (const key of keys) {
+      const value = attributes?.[key];
+      if (value) return value;
+    }
+    return "";
+  };
+  const measurements = (dimensions: string | null) => {
+    const values = (dimensions?.match(/\d+(?:\.\d+)?/g) ?? []).slice(0, 3);
+    return {
+      length: values[0] ?? "",
+      breadth: values[1] ?? "",
+      height: values[2] ?? "",
+    };
+  };
+  const weightInKg = (weight: string | null) => {
+    const value = Number(weight?.match(/\d+(?:\.\d+)?/)?.[0] ?? "");
+    if (!Number.isFinite(value)) return "";
+    return /\b(?:g|gram|grams)\b/i.test(weight ?? "") && !/\bkg\b/i.test(weight ?? "")
+      ? value / 1000
+      : value;
+  };
+  const exportImageUrl = (value: string | null | undefined) => {
+    if (!value || value.startsWith("data:")) return "";
+    if (value.startsWith("/objects/")) return `/api/storage/objects/${value.slice("/objects/".length)}`;
+    return value.slice(0, 32767);
+  };
+  const excelSafe = (value: unknown) =>
+    typeof value === "string" ? value.slice(0, 32767) : value;
+  const data = rows.map((p) => {
+    const meta = metadataByProduct.get(p.id);
+    const attributes = meta?.attributes;
+    const productImages = imagesByProduct.get(p.id) ?? [];
+    const orderedPaths = productImages.map(image => image.objectPath);
+    if (p.imageUrl && !orderedPaths.includes(p.imageUrl)) orderedPaths.unshift(p.imageUrl);
+    const imageUrls = Array.from({ length: 10 }, (_, index) => exportImageUrl(orderedPaths[index]));
+    const imageColumns = Object.fromEntries(Array.from({ length: 10 }, (_, index) => [
+      `Image ${index + 1}`,
+      imageUrls[index],
+    ]));
+    const packageSize = measurements(p.dimensions);
+    const reservedAttributes = new Set([
+      "Brand", "Color", "Colour", "Size", "Size Type", "Return/Exchange Condition",
+      "Visibility", "Size Chart", "Pickup Address Code", "Customisation Id",
+      "Customisation ID", "Associated Pixel",
+    ]);
+    const customAttributes = Object.entries(attributes ?? {})
+      .filter(([key, value]) => !reservedAttributes.has(key) && Boolean(value))
+      .slice(0, 5)
+      .map(([key, value]) => `${key}: ${value}`);
+    const collections = (meta?.seoTags ?? []).slice(0, 3);
+    const row = {
+      "Product Image Preview": imageUrls[0],
+      "Product Code": p.barcode || String(p.id),
+      "Amazon ASIN": attribute(attributes, "Amazon ASIN"),
+      "Name": p.name,
+      "Sku Id": p.sku,
+      "Selling Price": p.price,
+      "MRP": p.mrp,
+      "Cost Price": p.costPrice,
+      "Quantity": p.stockQuantity,
+      "Packaging Length (in cm)": packageSize.length,
+      "Packaging Breadth (in cm)": packageSize.breadth,
+      "Packaging Height (in cm)": packageSize.height,
+      "Packaging Weight (in kg)": weightInKg(p.weight),
+      "GST %": p.gst,
+      ...imageColumns,
+      "Video 1": attribute(attributes, "Video 1"),
+      "Video 2": attribute(attributes, "Video 2"),
+      "Product Type": p.category,
+      "Size Type": attribute(attributes, "Size Type"),
+      "Size": attribute(attributes, "Size"),
+      "Colour": attribute(attributes, "Colour", "Color"),
+      "Description": p.description || p.shortDescription || "",
+      "Return/Exchange Condition": attribute(attributes, "Return/Exchange Condition"),
+      "Visibility": attribute(attributes, "Visibility") || (p.status === "active" ? "Visible" : "Hidden"),
+      "Size Chart": attribute(attributes, "Size Chart"),
+      "Pickup Address Code": attribute(attributes, "Pickup Address Code") || p.warehouseLocation || "",
+      "HSN Code": p.hsn || "",
+      "Customisation Id": attribute(attributes, "Customisation Id", "Customisation ID"),
+      "Associated Pixel": attribute(attributes, "Associated Pixel"),
+      "attr1_Attribute Name": customAttributes[0] || "",
+      "attr2_Attribute Name": customAttributes[1] || "",
+      "attr3_Attribute Name": customAttributes[2] || "",
+      "attr4_Attribute Name": customAttributes[3] || "",
+      "attr5_Attribute Name": customAttributes[4] || "",
+      "collection_1": collections[0] || "",
+      "collection_2": collections[1] || "",
+      "collection_3": collections[2] || "",
+    };
+    return Object.fromEntries(Object.entries(row).map(([key, value]) => [key, excelSafe(value)]));
+  });
   const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.json_to_sheet(data);
+  const headers = PRODUCT_CATALOG_EXPORT_HEADERS;
+  const ws = XLSX.utils.json_to_sheet(data, { header: headers });
+  const finalColumn = XLSX.utils.encode_col(headers.length - 1);
+  ws["!autofilter"] = { ref: `A1:${finalColumn}${Math.max(1, data.length + 1)}` };
+  (ws as any)["!freeze"] = { xSplit: 0, ySplit: 1, topLeftCell: "A2", activePane: "bottomLeft", state: "frozen" };
+  ws["!cols"] = headers.map(header => {
+    if (header === "Product Image Preview" || header.startsWith("Image ")) return { wch: 36 };
+    if (["Description", "Return/Exchange Condition"].includes(header)) return { wch: 32 };
+    if (["Name", "Product Type", "Pickup Address Code"].includes(header)) return { wch: 24 };
+    return { wch: 15 };
+  });
+  ws["!rows"] = [{ hpt: 26 }];
+  for (let column = 0; column < headers.length; column++) {
+    const cell = ws[XLSX.utils.encode_cell({ r: 0, c: column })];
+    if (cell) cell.s = {
+      font: { bold: true, color: { rgb: "FFFFFF" } },
+      fill: { fgColor: { rgb: "1F4E78" } },
+      alignment: { horizontal: "center", vertical: "center" },
+    };
+  }
+  for (let row = 1; row <= data.length; row++) {
+    for (const column of [0, ...Array.from({ length: 10 }, (_, index) => 14 + index)]) {
+      const cell = ws[XLSX.utils.encode_cell({ r: row, c: column })];
+      if (cell?.v && typeof cell.v === "string") {
+        cell.l = { Target: cell.v, Tooltip: "Open product image" };
+      }
+    }
+  }
   XLSX.utils.book_append_sheet(wb, ws, "Products");
   return XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
 }

@@ -512,6 +512,46 @@ export async function applyMigrations(): Promise<void> {
     `);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS product_images_product_id_idx ON product_images(product_id)`);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS product_images_company_id_idx ON product_images(company_id)`);
+    await db.execute(sql`ALTER TABLE product_images ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS product_images_product_order_idx ON product_images(product_id, is_primary, sort_order)`);
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS product_media_uploads (
+        id SERIAL PRIMARY KEY,
+        company_id INTEGER NOT NULL,
+        object_path TEXT NOT NULL UNIQUE,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS product_media_uploads_company_id_idx ON product_media_uploads(company_id)`);
+    // Preserve any historical duplicate SKUs, but serialize and reject every
+    // future conflicting insert/update regardless of which import/API path writes it.
+    await db.execute(sql`
+      CREATE OR REPLACE FUNCTION enforce_company_product_sku_uniqueness()
+      RETURNS trigger AS $$
+      BEGIN
+        PERFORM pg_advisory_xact_lock(
+          hashtext(NEW.company_id::text || ':' || lower(btrim(NEW.sku)))
+        );
+        IF EXISTS (
+          SELECT 1
+          FROM products
+          WHERE company_id = NEW.company_id
+            AND lower(btrim(sku)) = lower(btrim(NEW.sku))
+            AND id <> COALESCE(NEW.id, 0)
+        ) THEN
+          RAISE EXCEPTION 'SKU already exists for this company'
+            USING ERRCODE = '23505';
+        END IF;
+        RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql
+    `);
+    await db.execute(sql`DROP TRIGGER IF EXISTS products_company_sku_unique_guard ON products`);
+    await db.execute(sql`
+      CREATE TRIGGER products_company_sku_unique_guard
+      BEFORE INSERT OR UPDATE OF company_id, sku ON products
+      FOR EACH ROW EXECUTE FUNCTION enforce_company_product_sku_uniqueness()
+    `);
 
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS product_variants (

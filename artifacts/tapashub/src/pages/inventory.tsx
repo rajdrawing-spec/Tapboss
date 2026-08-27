@@ -7,12 +7,13 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
-import { Search, Plus, Pencil, Trash2, PackageSearch, AlertTriangle, Sparkles, Upload, Download, Wand2, ScanBarcode, ImagePlus, Loader2, FileSpreadsheet, Check, Link, RefreshCw } from "lucide-react"
+import { Search, Plus, Pencil, Trash2, PackageSearch, AlertTriangle, Sparkles, Upload, Download, Wand2, ScanBarcode, ImagePlus, Loader2, FileSpreadsheet, Check, Link, RefreshCw, ArrowLeft, ArrowRight, Star, X } from "lucide-react"
 import { useCompany } from "@/contexts/company-context"
 import { useToast } from "@/hooks/use-toast"
-import { useUpload } from "@workspace/object-storage-web"
 import AiProductPanel from "@/components/ai-products/ai-product-panel"
 
 const API_BASE = ""
@@ -53,6 +54,7 @@ interface ProductVariant {
 
 interface AutoFillData {
   name?: string
+  sku?: string
   category?: string
   subcategory?: string
   brand?: string
@@ -76,6 +78,20 @@ interface AutoFillData {
   attributes?: Record<string, string>
 }
 
+interface ProductImage {
+  key: string
+  objectPath: string
+  preview: string
+  id?: number
+  isPrimary?: boolean
+  analysisDataUrl?: string
+}
+
+interface DraftReview {
+  images: ProductImage[]
+  autoFill: AutoFillData
+}
+
 const emptyForm = (): ProductForm => ({
   companyId: "", name: "", sku: "", brand: "", category: "", subcategory: "",
   description: "", shortDescription: "", price: "", mrp: "", costPrice: "", gst: "",
@@ -92,12 +108,15 @@ function autoGenerateSourceLink(name: string, sku: string): string {
   return `https://store.example.com/products/${slug}`
 }
 
+export function productImagePreview(path: string): string {
+  if (path.startsWith("/objects/")) return `/api/storage/objects/${path.slice("/objects/".length)}`
+  return path
+}
+
 export default function Inventory() {
   const { activeCompany } = useCompany()
   const { toast } = useToast()
-  const { uploadFile, isUploading: uploadingImage } = useUpload({
-    onError: (e) => toast({ title: "Upload failed", description: e.message, variant: "destructive" }),
-  })
+  const [uploadingProductImage, setUploadingProductImage] = React.useState(false)
   const [search, setSearch] = React.useState("")
   const [page, setPage] = React.useState(1)
   const [showDialog, setShowDialog] = React.useState(false)
@@ -110,14 +129,17 @@ export default function Inventory() {
   const [importFile, setImportFile] = React.useState<File | null>(null)
   const [importingJob, setImportingJob] = React.useState(false)
   const [generatingSku, setGeneratingSku] = React.useState(false)
-  const [analyzingImages, setAnalyzingImages] = React.useState(false)
-  const [pendingImages, setPendingImages] = React.useState<string[]>([])
   const [autoFill, setAutoFill] = React.useState<AutoFillData | null>(null)
   const [variants, setVariants] = React.useState<ProductVariant[]>([])
   const [barcodeImage, setBarcodeImage] = React.useState<string | null>(null)
   const [generatingBarcode, setGeneratingBarcode] = React.useState(false)
   const [generatingMarketplace, setGeneratingMarketplace] = React.useState(false)
   const fileInputRef = React.useRef<HTMLInputElement>(null)
+  const [media, setMedia] = React.useState<ProductImage[]>([])
+  const [removedImageIds, setRemovedImageIds] = React.useState<number[]>([])
+  const [selectedIds, setSelectedIds] = React.useState<Set<number>>(new Set())
+  const [draftQueue, setDraftQueue] = React.useState<DraftReview[]>([])
+  const [draftIndex, setDraftIndex] = React.useState(0)
 
   const { data: companies } = useListCompanies({ query: { enabled: true, queryKey: ["/api/companies"] } })
 
@@ -129,9 +151,13 @@ export default function Inventory() {
     query: { enabled: true, queryKey: getListProductsQueryKey(params) }
   })
 
-  // ── Quick Add with AI — employee-friendly image-only flow ──────────────────
+  React.useEffect(() => {
+    setSelectedIds(new Set())
+  }, [activeCompany?.id, page, search])
+
+  // ── AI draft studio — images are always reviewed before product creation ──
   const [quickOpen, setQuickOpen] = React.useState(false)
-  const [quickImages, setQuickImages] = React.useState<string[]>([])
+  const [quickImages, setQuickImages] = React.useState<Array<ProductImage & { group: number }>>([])
   const [quickCompanyId, setQuickCompanyId] = React.useState("")
   const [quickCreating, setQuickCreating] = React.useState(false)
 
@@ -141,24 +167,59 @@ export default function Inventory() {
     setQuickOpen(true)
   }
 
+  async function uploadCatalogImage(file: File, companyId: number): Promise<string | null> {
+    setUploadingProductImage(true)
+    try {
+      const request = await fetch(`${API_BASE}/api/products/media/upload?companyId=${companyId}`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": file.type || "application/octet-stream" },
+        body: file,
+      })
+      if (!request.ok) throw new Error("Product storage unavailable")
+      const upload = await request.json()
+      return upload.objectPath
+    } catch {
+      return await new Promise<string | null>((resolve) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : null)
+        reader.onerror = () => resolve(null)
+        reader.readAsDataURL(file)
+      })
+    } finally {
+      setUploadingProductImage(false)
+    }
+  }
+
   async function handleQuickImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files || []).slice(0, 10)
+    const files = Array.from(e.target.files || []).slice(0, 30)
     if (!files.length) return
+    const companyId = parseInt(quickCompanyId)
+    if (!companyId) {
+      toast({ title: "Select a company before uploading photos", variant: "destructive" })
+      e.target.value = ""
+      return
+    }
     for (const file of files) {
       if (file.size > 8 * 1024 * 1024) {
         toast({ title: "Photo too large", description: `${file.name} is over 8 MB`, variant: "destructive" })
         continue
       }
-      // Quick-create sends inline image data — read the file directly as a
-      // data URL (the backend only accepts data:image/* for security).
-      const dataUrl = await new Promise<string>((resolve, reject) => {
+      const analysisDataUrl = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader()
         reader.onload = () => resolve(String(reader.result))
-        reader.onerror = () => reject(new Error("Could not read file"))
+        reader.onerror = () => reject(reader.error)
         reader.readAsDataURL(file)
-      }).catch(() => null)
-      if (dataUrl?.startsWith("data:image/")) {
-        setQuickImages(prev => prev.length < 10 ? [...prev, dataUrl] : prev)
+      })
+      const objectPath = await uploadCatalogImage(file, companyId)
+      if (objectPath) {
+        setQuickImages(prev => [...prev, {
+          key: `${objectPath}-${Date.now()}-${prev.length}`,
+          objectPath,
+          preview: URL.createObjectURL(file),
+          analysisDataUrl,
+          group: Math.max(1, ...prev.map(image => image.group), 1),
+        }])
       }
     }
     e.target.value = ""
@@ -170,33 +231,62 @@ export default function Inventory() {
     if (!quickImages.length) { toast({ title: "Upload at least one photo", variant: "destructive" }); return }
     setQuickCreating(true)
     try {
-      const res = await fetch(`${API_BASE}/api/ai-products/quick-create`, {
-        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ companyId, images: quickImages }),
-      })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        throw new Error(err.error || "AI could not create the product")
+      const grouped = [...new Set(quickImages.map(image => image.group))].sort((a, b) => a - b)
+      const reviews: DraftReview[] = []
+      for (const group of grouped) {
+        const images = quickImages.filter(image => image.group === group)
+        if (images.length > 10) throw new Error(`Group ${group} has ${images.length} images. A product can have at most 10.`)
+        const res = await fetch(`${API_BASE}/api/ai-products/analyze-draft`, {
+          method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ companyId, images: images.map(image => image.analysisDataUrl) }),
+        })
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}))
+          throw new Error(err.error || `Could not analyze group ${group}`)
+        }
+        const result = await res.json()
+        reviews.push({ images, autoFill: result.autoFill || result.draft || result.analysis || result })
       }
-      const data = await res.json()
-      const { product, healthScore, warning } = data
-      if (warning) {
-        toast({ title: "Product created (edit to complete)", description: warning })
-      } else {
-        toast({ title: "Product created by AI", description: `${product.name} · ${product.category} · health score ${healthScore}/100` })
-      }
+      setDraftQueue(reviews)
+      setDraftIndex(0)
       setQuickOpen(false)
-      setQuickImages([])
-      refetch()
+      openDraftReview(reviews[0], companyId)
+      toast({ title: "Drafts ready for review", description: `${reviews.length} product ${reviews.length === 1 ? "draft" : "drafts"} created. Nothing has been saved.` })
     } catch (e: any) {
-      toast({ title: "Could not create product", description: e?.message, variant: "destructive" })
+      toast({ title: "Could not prepare drafts", description: e?.message, variant: "destructive" })
     } finally { setQuickCreating(false) }
+  }
+
+  function openDraftReview(review: DraftReview, companyId: number) {
+    const suggestion = review.autoFill || {}
+    setEditing(null)
+    setForm({
+      ...emptyForm(),
+      companyId: String(companyId),
+      name: suggestion.name || "",
+      sku: suggestion.sku || "",
+      brand: suggestion.brand || "",
+      category: suggestion.category || "",
+      subcategory: suggestion.subcategory || "",
+      weight: suggestion.weight || "",
+      dimensions: suggestion.dimensions || "",
+      description: [suggestion.material, suggestion.pattern, suggestion.occasion, suggestion.fit].filter(Boolean).join(". "),
+      imageUrl: review.images[0]?.objectPath || "",
+    })
+    setMedia(review.images.map((image, index) => ({ ...image, isPrimary: index === 0 })))
+    setRemovedImageIds([])
+    setAutoFill(suggestion)
+    setVariants([])
+    setBarcodeImage(null)
+    setShowDialog(true)
   }
 
   function openAdd() {
     setEditing(null)
     setForm({ ...emptyForm(), companyId: activeCompany ? String(activeCompany.id) : "" })
-    setPendingImages([])
+    setMedia([])
+    setRemovedImageIds([])
+    setDraftQueue([])
     setAutoFill(null)
     setVariants([])
     setBarcodeImage(null)
@@ -213,11 +303,34 @@ export default function Inventory() {
       warehouseLocation: p.warehouseLocation ?? "", weight: p.weight ?? "", dimensions: p.dimensions ?? "", hsn: p.hsn ?? "",
       status: p.status, imageUrl: p.imageUrl ?? "", sourceLink: p.sourceLink ?? "",
     })
-    setPendingImages([])
+    setMedia(p.imageUrl ? [{ key: `legacy-${p.id}`, objectPath: p.imageUrl, preview: productImagePreview(p.imageUrl), isPrimary: true }] : [])
+    setRemovedImageIds([])
+    setDraftQueue([])
     setAutoFill(null)
     setVariants([])
     setBarcodeImage(p.barcodeImage ?? null)
     setShowDialog(true)
+    fetch(`${API_BASE}/api/ai-products/${p.id}/ai-metadata`, { credentials: "include" })
+      .then(res => res.ok ? res.json() : Promise.reject())
+      .then(result => {
+        if (Array.isArray(result.images) && result.images.length) {
+          const ordered = [...result.images].sort((a: any, b: any) =>
+            Number(Boolean(b.isPrimary)) - Number(Boolean(a.isPrimary)) || (a.sortOrder ?? a.position ?? a.id) - (b.sortOrder ?? b.position ?? b.id)
+          )
+          const storedImages: ProductImage[] = ordered.map((image: any) => ({
+            key: `existing-${image.id}`,
+            id: image.id,
+            objectPath: image.objectPath,
+            preview: productImagePreview(image.objectPath),
+            isPrimary: image.objectPath === p.imageUrl || Boolean(image.isPrimary),
+          }))
+          if (p.imageUrl && !storedImages.some((image: ProductImage) => image.objectPath === p.imageUrl)) {
+            storedImages.unshift({ key: `legacy-${p.id}`, objectPath: p.imageUrl, preview: productImagePreview(p.imageUrl), isPrimary: true })
+          }
+          setMedia(storedImages.map((image: ProductImage, index: number) => ({ ...image, isPrimary: index === 0 })))
+        }
+      })
+      .catch(() => {})
   }
 
   async function handleSave() {
@@ -235,7 +348,7 @@ export default function Inventory() {
         stockQuantity: parseInt(form.stockQuantity), reorderLevel: parseInt(form.reorderLevel),
         warehouseLocation: form.warehouseLocation || undefined, weight: form.weight || undefined,
         dimensions: form.dimensions || undefined, hsn: form.hsn || undefined, status: form.status,
-        imageUrl: form.imageUrl || undefined,
+        imageUrl: media[0]?.objectPath || null,
         sourceLink: form.sourceLink || undefined,
       }
       const url = editing ? `${API_BASE}/api/products/${editing.id}` : `${API_BASE}/api/products`
@@ -243,18 +356,39 @@ export default function Inventory() {
         method: editing ? "PATCH" : "POST", credentials: "include",
         headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
       })
-      if (!res.ok) throw new Error()
+      if (!res.ok) {
+        const errorBody = await res.json().catch(() => ({}))
+        throw new Error(errorBody.error || "Could not save product")
+      }
 
       const saved = await res.json()
       const productId = saved.id || editing?.id
 
-      if (pendingImages.length > 0 && productId) {
-        await Promise.all(pendingImages.map((objectPath, i) =>
+      const newImages = media.filter(image => !image.id)
+      if (newImages.length > 0 && productId) {
+        await Promise.all(newImages.map(image =>
           fetch(`${API_BASE}/api/products/${productId}/images`, {
             method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ objectPath, isPrimary: i === 0, altText: `${form.name} ${i === 0 ? "front" : "angle " + i}` }),
+            body: JSON.stringify({
+              objectPath: image.objectPath,
+              isPrimary: media.indexOf(image) === 0,
+              sortOrder: media.indexOf(image),
+              altText: `${form.name} ${media.indexOf(image) === 0 ? "front" : "angle " + media.indexOf(image)}`,
+            }),
           })
         ))
+      }
+
+      if (editing && productId) {
+        const orderResponse = await fetch(`${API_BASE}/api/products/${productId}/images/reorder`, {
+          method: "PATCH", credentials: "include", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ images: media.map((image, index) => ({ id: image.id, objectPath: image.objectPath, position: index, isPrimary: index === 0 })) }),
+        })
+        if (!orderResponse.ok && orderResponse.status !== 404 && orderResponse.status !== 405) throw new Error("Could not reorder images")
+        for (const imageId of removedImageIds) {
+          const removeResponse = await fetch(`${API_BASE}/api/products/${productId}/images/${imageId}`, { method: "DELETE", credentials: "include" })
+          if (!removeResponse.ok) throw new Error("Could not remove image")
+        }
       }
 
       if (variants.length > 0 && productId) {
@@ -269,20 +403,25 @@ export default function Inventory() {
         ))
       }
 
-      if (pendingImages.length > 0 && productId) {
-        analyzeImagesInternal(productId, pendingImages)
-      }
-
       toast({ title: editing ? "Product updated" : "Product added" })
-      setShowDialog(false); refetch()
-    } catch {
-      toast({ title: "Error", description: "Could not save product", variant: "destructive" })
+      refetch()
+      const nextDraft = draftQueue[draftIndex + 1]
+      if (!editing && nextDraft) {
+        setDraftIndex(index => index + 1)
+        openDraftReview(nextDraft, parseInt(form.companyId))
+      } else {
+        setShowDialog(false)
+        setDraftQueue([])
+        setQuickImages([])
+      }
+    } catch (error: any) {
+      toast({ title: "Error", description: error?.message || "Could not save product", variant: "destructive" })
     } finally { setSaving(false) }
   }
 
   async function generateSkuInternal(companyId: number, name: string, category: string): Promise<string> {
     try {
-      const res = await fetch(`${API_BASE}/api/ai-products/0/generate-sku`, {
+      const res = await fetch(`${API_BASE}/api/ai-products/generate-sku`, {
         method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ companyId, name, category }),
       })
@@ -311,33 +450,71 @@ export default function Inventory() {
   async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files || [])
     if (!files.length) return
-    const uploaded: string[] = []
+    const uploaded: ProductImage[] = []
+    const companyId = parseInt(form.companyId)
+    if (!companyId) {
+      toast({ title: "Select a company before uploading images", variant: "destructive" })
+      e.target.value = ""
+      return
+    }
     for (const file of files) {
-      const res = await uploadFile(file)
-      if (res?.objectPath) uploaded.push(res.objectPath)
+      const objectPath = await uploadCatalogImage(file, companyId)
+      if (objectPath) uploaded.push({
+        key: `${objectPath}-${Date.now()}-${uploaded.length}`,
+        objectPath,
+        preview: URL.createObjectURL(file),
+      })
     }
     if (uploaded.length) {
-      setPendingImages(prev => [...prev, ...uploaded])
-      if (!form.imageUrl) setForm(f => ({ ...f, imageUrl: uploaded[0] }))
+      setMedia(prev => {
+        const next = [...prev, ...uploaded].slice(0, 10)
+        return next.map((image, index) => ({ ...image, isPrimary: index === 0 }))
+      })
+      if (!form.imageUrl) setForm(f => ({ ...f, imageUrl: uploaded[0].objectPath }))
     }
     e.target.value = ""
   }
 
-  async function analyzeImagesInternal(productId: number, objectPaths: string[]) {
-    if (!objectPaths.length) return
-    setAnalyzingImages(true)
-    try {
-      const res = await fetch(`${API_BASE}/api/ai-products/${productId}/analyze-images`, {
-        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ objectPaths }),
-      })
-      if (!res.ok) throw new Error()
-      const result = await res.json()
-      setAutoFill(result.autoFill || null)
-      toast({ title: "AI analysis complete", description: `Detected ${result.category || "product"} · health ${result.healthScore}/100` })
-    } catch {
-      toast({ title: "Image analysis failed", variant: "destructive" })
-    } finally { setAnalyzingImages(false) }
+  function moveImage(index: number, direction: -1 | 1) {
+    setMedia(current => {
+      const target = index + direction
+      if (target < 0 || target >= current.length) return current
+      const next = [...current]
+      ;[next[index], next[target]] = [next[target], next[index]]
+      return next.map((image, position) => ({ ...image, isPrimary: position === 0 }))
+    })
+  }
+
+  function moveImageTo(fromIndex: number, toIndex: number) {
+    if (fromIndex === toIndex) return
+    setMedia(current => {
+      const next = [...current]
+      const [moved] = next.splice(fromIndex, 1)
+      next.splice(toIndex, 0, moved)
+      setForm(formState => ({ ...formState, imageUrl: next[0]?.objectPath || "" }))
+      return next.map((image, position) => ({ ...image, isPrimary: position === 0 }))
+    })
+  }
+
+  function makeMainImage(index: number) {
+    setMedia(current => {
+      const next = [...current]
+      const [chosen] = next.splice(index, 1)
+      next.unshift(chosen)
+      setForm(formState => ({ ...formState, imageUrl: chosen.objectPath }))
+      return next.map((image, position) => ({ ...image, isPrimary: position === 0 }))
+    })
+  }
+
+  function removeImage(index: number) {
+    setMedia(current => {
+      const image = current[index]
+      if (image.id) setRemovedImageIds(ids => [...ids, image.id!])
+      if (image.preview.startsWith("blob:")) URL.revokeObjectURL(image.preview)
+      const next = current.filter((_, position) => position !== index)
+      setForm(formState => ({ ...formState, imageUrl: next[0]?.objectPath || "" }))
+      return next.map((item, position) => ({ ...item, isPrimary: position === 0 }))
+    })
   }
 
   function applyAutoFill() {
@@ -415,7 +592,7 @@ export default function Inventory() {
     try {
       const res = await fetch(`${API_BASE}/api/ai-products/export-xlsx`, {
         method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ companyId: activeCompany.id }),
+        body: JSON.stringify({ companyId: activeCompany.id, ...(selectedIds.size ? { productIds: [...selectedIds] } : {}) }),
       })
       if (!res.ok) throw new Error()
       const blob = await res.blob()
@@ -426,6 +603,27 @@ export default function Inventory() {
     } catch {
       toast({ title: "Error", description: "Excel export failed", variant: "destructive" })
     }
+  }
+
+  const visibleProductIds = (data?.items || []).map((product: any) => Number(product.id))
+  const allVisibleSelected = visibleProductIds.length > 0 && visibleProductIds.every((id: number) => selectedIds.has(id))
+
+  function toggleSelectAll() {
+    setSelectedIds(current => {
+      const next = new Set(current)
+      if (allVisibleSelected) visibleProductIds.forEach((id: number) => next.delete(id))
+      else visibleProductIds.forEach((id: number) => next.add(id))
+      return next
+    })
+  }
+
+  function toggleProduct(id: number) {
+    setSelectedIds(current => {
+      const next = new Set(current)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
   }
 
   async function importXlsx(file: File) {
@@ -507,20 +705,20 @@ export default function Inventory() {
         <div className="flex gap-2 flex-wrap justify-end">
           <Button variant="outline" onClick={() => setImporting(true)} className="gap-2"><Upload className="w-4 h-4" />Import CSV</Button>
           <Button variant="outline" onClick={exportCsv} className="gap-2"><Download className="w-4 h-4" />Export CSV</Button>
-          <Button variant="outline" onClick={exportXlsx} className="gap-2"><FileSpreadsheet className="w-4 h-4" />Export Excel</Button>
-          <Button onClick={openQuickAdd} className="gap-2 bg-purple-600 hover:bg-purple-700 text-white"><Sparkles className="w-4 h-4" />Quick Add with AI</Button>
+          <Button variant="outline" onClick={exportXlsx} className="gap-2" data-testid="button-export-xlsx"><FileSpreadsheet className="w-4 h-4" />Export Excel{selectedIds.size ? ` (${selectedIds.size})` : ""}</Button>
+          <Button onClick={openQuickAdd} className="gap-2 bg-purple-600 hover:bg-purple-700 text-white" data-testid="button-ai-drafts"><Sparkles className="w-4 h-4" />Create AI drafts</Button>
           <Button onClick={openAdd} className="gap-2"><Plus className="w-4 h-4" />Add Product</Button>
         </div>
       </div>
 
-      {/* Quick Add with AI — upload photos only, AI builds the catalog entry */}
+      {/* Draft studio: analysis is intentionally separated from saving. */}
       <Dialog open={quickOpen} onOpenChange={setQuickOpen}>
-        <DialogContent className="sm:max-w-[440px]">
+        <DialogContent className="sm:max-w-[680px]">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Sparkles className="w-4 h-4 text-purple-500" />Quick Add with AI</DialogTitle>
+            <DialogTitle className="flex items-center gap-2"><Sparkles className="w-4 h-4 text-purple-500" />Create product drafts from images</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            Just upload product photos — AI will detect the name, category, brand, colors, materials and create the full catalog entry automatically.
+            Upload product photos, assign related angles to the same group, then ask AI to prepare editable drafts. You will review and save every product individually.
           </p>
           {!activeCompany && (
             <div className="space-y-1.5">
@@ -536,18 +734,32 @@ export default function Inventory() {
             </div>
           )}
           <div className="space-y-2">
-            <Label className="flex items-center gap-1.5"><ImagePlus className="w-4 h-4" />Product Photos (1–10)</Label>
-            <Input type="file" accept="image/*" multiple onChange={handleQuickImageUpload} disabled={uploadingImage || quickCreating} />
+            <Label className="flex items-center gap-1.5"><ImagePlus className="w-4 h-4" />Product photos</Label>
+            <Input type="file" accept="image/*" multiple onChange={handleQuickImageUpload} disabled={uploadingProductImage || quickCreating || !quickCompanyId} data-testid="input-ai-images" />
+            <p className="text-xs text-muted-foreground">Manually choose a group for each image. Each group becomes one draft (maximum 10 images per product).</p>
             {quickImages.length > 0 && (
-              <div className="flex gap-2 flex-wrap">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 max-h-[350px] overflow-y-auto p-1">
                 {quickImages.map((img, i) => (
-                  <div key={i} className="relative">
-                    <img src={img} alt={`Photo ${i + 1}`} className="w-14 h-14 rounded-md object-cover border" />
+                  <div key={img.key} className="relative rounded-lg border bg-card p-2 space-y-2">
+                    <img src={img.preview} alt={`Uploaded product photo ${i + 1}`} className="w-full aspect-square rounded-md object-cover bg-muted" />
                     <button
                       type="button"
-                      className="absolute -top-1.5 -right-1.5 bg-destructive text-destructive-foreground rounded-full w-4 h-4 flex items-center justify-center text-[10px]"
+                      aria-label={`Remove photo ${i + 1}`}
+                      className="absolute top-1 right-1 bg-background/90 border rounded-full w-6 h-6 flex items-center justify-center"
                       onClick={() => setQuickImages(prev => prev.filter((_, j) => j !== i))}
-                    >×</button>
+                    ><X className="w-3.5 h-3.5" /></button>
+                    <div className="flex items-center gap-1">
+                      <Label className="text-xs flex-1">Draft group</Label>
+                      <Input
+                        className="w-16 h-8"
+                        type="number"
+                        min="1"
+                        max="20"
+                        aria-label={`Group for photo ${i + 1}`}
+                        value={img.group}
+                        onChange={event => setQuickImages(current => current.map((item, index) => index === i ? { ...item, group: Math.max(1, Number(event.target.value) || 1) } : item))}
+                      />
+                    </div>
                   </div>
                 ))}
               </div>
@@ -557,10 +769,10 @@ export default function Inventory() {
             <Button variant="outline" onClick={() => setQuickOpen(false)} disabled={quickCreating}>Cancel</Button>
             <Button
               onClick={handleQuickCreate}
-              disabled={quickCreating || uploadingImage || !quickImages.length}
+              disabled={quickCreating || uploadingProductImage || !quickImages.length}
               className="gap-2 bg-purple-600 hover:bg-purple-700 text-white"
             >
-              {quickCreating ? <><Loader2 className="w-4 h-4 animate-spin" />AI is creating…</> : <><Wand2 className="w-4 h-4" />Create Product</>}
+              {quickCreating ? <><Loader2 className="w-4 h-4 animate-spin" />Preparing drafts…</> : <><Wand2 className="w-4 h-4" />Analyze & review drafts</>}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -573,12 +785,16 @@ export default function Inventory() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input placeholder="Search products…" value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} className="pl-9" />
             </div>
+            {selectedIds.size > 0 && <Badge variant="secondary" className="px-3" data-testid="status-selection">{selectedIds.size} selected</Badge>}
           </div>
 
           <div className="overflow-x-auto rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-10">
+                    <Checkbox checked={allVisibleSelected} onCheckedChange={toggleSelectAll} aria-label="Select all visible products" data-testid="checkbox-select-all-products" />
+                  </TableHead>
                   <TableHead className="w-14" />
                   <TableHead>Product</TableHead><TableHead>SKU</TableHead><TableHead>Category</TableHead>
                   <TableHead>Price</TableHead><TableHead>Stock</TableHead><TableHead>Status</TableHead><TableHead className="w-20" />
@@ -586,20 +802,23 @@ export default function Inventory() {
               </TableHeader>
               <TableBody>
                 {isLoading ? Array.from({ length: 8 }).map((_, i) => (
-                  <TableRow key={i}><TableCell colSpan={8}><Skeleton className="h-8 w-full" /></TableCell></TableRow>
+                  <TableRow key={i}><TableCell colSpan={9}><Skeleton className="h-8 w-full" /></TableCell></TableRow>
                 )) : data?.items?.length === 0 ? (
-                  <TableRow><TableCell colSpan={8} className="h-32 text-center">
+                  <TableRow><TableCell colSpan={9} className="h-32 text-center">
                     <PackageSearch className="mx-auto h-8 w-8 opacity-20 mb-2" />
                     <p className="text-muted-foreground">No products found</p>
                   </TableCell></TableRow>
                 ) : data?.items?.map((p: any) => {
                   const lowStock = p.stockQuantity <= p.reorderLevel
                   return (
-                    <TableRow key={p.id} className="hover:bg-muted/30">
+                    <TableRow key={p.id} className="hover:bg-muted/30" data-state={selectedIds.has(p.id) ? "selected" : undefined}>
+                      <TableCell>
+                        <Checkbox checked={selectedIds.has(p.id)} onCheckedChange={() => toggleProduct(p.id)} aria-label={`Select ${p.name}`} data-testid={`checkbox-product-${p.id}`} />
+                      </TableCell>
                       <TableCell className="pr-0">
                         {p.imageUrl ? (
                           <img
-                            src={p.imageUrl}
+                            src={productImagePreview(p.imageUrl)}
                             alt={p.name}
                             className="w-10 h-10 rounded-md object-cover border border-border/50 bg-muted"
                             onError={e => { (e.target as HTMLImageElement).style.display = "none" }}
@@ -662,97 +881,91 @@ export default function Inventory() {
       </Card>
 
       <Dialog open={showDialog} onOpenChange={setShowDialog}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader><DialogTitle>{editing ? "Edit Product" : "Add Product"}</DialogTitle></DialogHeader>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 py-2 max-h-[70vh] overflow-y-auto pr-1">
-            <div className="col-span-3 space-y-1.5">
-              <Label>Company *</Label>
-              <Select value={form.companyId} onValueChange={v => f("companyId", v)}>
-                <SelectTrigger><SelectValue placeholder="Select company" /></SelectTrigger>
-                <SelectContent>{companies?.map(c => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-            <div className="col-span-2 space-y-1.5"><Label>Product Name *</Label><Input value={form.name} onChange={e => f("name", e.target.value)} placeholder="Product name" /></div>
-            <div className="space-y-1.5">
-              <Label>SKU</Label>
-              <div className="flex gap-2">
-                <Input value={form.sku} onChange={e => f("sku", e.target.value)} placeholder="Auto-generated if empty" />
-                <Button variant="outline" size="icon" onClick={generateSku} disabled={generatingSku} title="Generate SKU"><ScanBarcode className="w-4 h-4" /></Button>
-              </div>
-            </div>
-            <div className="space-y-1.5"><Label>Brand</Label><Input value={form.brand} onChange={e => f("brand", e.target.value)} placeholder="Brand" /></div>
-            <div className="space-y-1.5"><Label>Category</Label><Input value={form.category} onChange={e => f("category", e.target.value)} placeholder="e.g. Apparel" /></div>
-            <div className="space-y-1.5"><Label>Subcategory</Label><Input value={form.subcategory} onChange={e => f("subcategory", e.target.value)} placeholder="e.g. Women's Tops" /></div>
-            <div className="space-y-1.5"><Label>Sale Price (₹) *</Label><Input value={form.price} onChange={e => f("price", e.target.value)} type="number" min="0" /></div>
-            <div className="space-y-1.5"><Label>MRP (₹)</Label><Input value={form.mrp} onChange={e => f("mrp", e.target.value)} type="number" min="0" /></div>
-            <div className="space-y-1.5"><Label>Cost Price (₹)</Label><Input value={form.costPrice} onChange={e => f("costPrice", e.target.value)} type="number" min="0" /></div>
-            <div className="space-y-1.5"><Label>GST (%)</Label><Input value={form.gst} onChange={e => f("gst", e.target.value)} type="number" min="0" placeholder="e.g. 5, 12, 18" /></div>
-            <div className="space-y-1.5"><Label>Stock Qty</Label><Input value={form.stockQuantity} onChange={e => f("stockQuantity", e.target.value)} type="number" min="0" /></div>
-            <div className="space-y-1.5"><Label>Reorder Level</Label><Input value={form.reorderLevel} onChange={e => f("reorderLevel", e.target.value)} type="number" min="0" /></div>
-            <div className="space-y-1.5"><Label>Weight</Label><Input value={form.weight} onChange={e => f("weight", e.target.value)} placeholder="e.g. 250g" /></div>
-            <div className="space-y-1.5"><Label>Dimensions</Label><Input value={form.dimensions} onChange={e => f("dimensions", e.target.value)} placeholder="L x W x H cm" /></div>
-            <div className="space-y-1.5"><Label>HSN Code</Label><Input value={form.hsn} onChange={e => f("hsn", e.target.value)} placeholder="HSN" /></div>
-            <div className="col-span-3 space-y-1.5"><Label>Warehouse Location</Label><Input value={form.warehouseLocation} onChange={e => f("warehouseLocation", e.target.value)} placeholder="e.g. Warehouse A, Rack 3" /></div>
-            <div className="col-span-3 space-y-1.5">
-              <Label className="flex items-center gap-1.5"><Link className="w-3.5 h-3.5" />Source / Product URL</Label>
-              <div className="flex gap-2">
-                <Input
-                  value={form.sourceLink}
-                  onChange={e => f("sourceLink", e.target.value)}
-                  placeholder="https://store.example.com/products/…"
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  title="Auto-generate link from product name"
-                  onClick={() => f("sourceLink", autoGenerateSourceLink(form.name, form.sku))}
-                  disabled={!form.name && !form.sku}
-                >
-                  <RefreshCw className="w-4 h-4" />
-                </Button>
-              </div>
-              <p className="text-xs text-muted-foreground">Public link to this product. Click ↺ to auto-generate from the product name.</p>
-            </div>
-            <div className="col-span-3 space-y-1.5"><Label>Short Description</Label><Input value={form.shortDescription} onChange={e => f("shortDescription", e.target.value)} placeholder="30-50 word description" /></div>
-            <div className="col-span-3 space-y-1.5"><Label>Description</Label><Input value={form.description} onChange={e => f("description", e.target.value)} placeholder="Full product description" /></div>
-            <div className="space-y-1.5">
-              <Label>Status</Label>
-              <Select value={form.status} onValueChange={v => f("status", v)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent><SelectItem value="active">Active</SelectItem><SelectItem value="inactive">Inactive</SelectItem></SelectContent>
-              </Select>
-            </div>
-
-            <div className="col-span-3 space-y-2">
-              <Label className="flex items-center gap-2"><ImagePlus className="w-4 h-4" /> Product Images</Label>
-              <div className="flex items-center gap-3">
-                <Input type="file" accept="image/*" multiple onChange={handleImageUpload} disabled={uploadingImage} />
-                {uploadingImage && <Loader2 className="w-4 h-4 animate-spin" />}
-              </div>
-              {pendingImages.length > 0 && (
-                <div className="flex flex-wrap gap-2">
-                  {pendingImages.map((path, i) => (
-                    <Badge key={i} variant="outline" className="text-xs">{path.split("/").pop()}</Badge>
-                  ))}
-                </div>
-              )}
-              {analyzingImages && <p className="text-xs text-muted-foreground flex items-center gap-2"><Loader2 className="w-3 h-3 animate-spin" /> AI analyzing images…</p>}
-              {autoFill && (
-                <div className="rounded-md border bg-muted/40 p-3 space-y-2">
-                  <p className="text-sm font-medium flex items-center gap-2"><Wand2 className="w-4 h-4 text-purple-500" /> AI detected {autoFill.category}{autoFill.brand ? ` · ${autoFill.brand}` : ""}</p>
-                  <div className="flex flex-wrap gap-1">
-                    {autoFill.keywords?.slice(0, 8).map(k => <Badge key={k} variant="secondary" className="text-xs">{k}</Badge>)}
+        <DialogContent className="max-w-5xl p-0 gap-0 overflow-hidden">
+          <DialogHeader className="px-6 py-5 border-b">
+            <DialogTitle className="flex items-center gap-2">
+              {editing ? "Edit Product" : "Add Product"}
+              {draftQueue.length > 0 && <Badge variant="secondary">Review draft {draftIndex + 1} of {draftQueue.length}</Badge>}
+            </DialogTitle>
+            <p className="text-sm text-muted-foreground">Changes are not published until you save.</p>
+          </DialogHeader>
+          <div className="max-h-[72vh] overflow-y-auto bg-muted/20 p-5">
+            <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)] gap-5">
+              <div className="space-y-5">
+                {autoFill && (
+                  <div className="rounded-xl border border-purple-500/30 bg-purple-500/5 p-4 flex items-start justify-between gap-3">
+                    <div><p className="text-sm font-medium flex items-center gap-2"><Wand2 className="w-4 h-4 text-purple-500" />AI draft ready for your review</p><p className="text-xs text-muted-foreground mt-1">Check every suggestion, price and SKU before saving.</p></div>
+                    <Button size="sm" variant="outline" onClick={applyAutoFill}><Check className="w-3.5 h-3.5 mr-1" />Use suggestions</Button>
                   </div>
-                  <Button size="sm" onClick={applyAutoFill} className="gap-2"><Check className="w-3.5 h-3.5" /> Apply auto-fill</Button>
-                </div>
-              )}
-              <p className="text-xs text-muted-foreground">Upload 1–10 images. AI will auto-detect category, color, material, and more on save.</p>
-            </div>
+                )}
+                <section className="rounded-xl border bg-card p-5 space-y-4" aria-labelledby="product-info-heading">
+                  <div><h3 id="product-info-heading" className="font-semibold">Product information</h3><p className="text-xs text-muted-foreground">The title and description customers will see.</p></div>
+                  <div className="space-y-1.5"><Label>Product name *</Label><Input value={form.name} onChange={e => f("name", e.target.value)} placeholder="Product name" data-testid="input-product-name" /></div>
+                  <div className="space-y-1.5"><Label>Short description</Label><Input value={form.shortDescription} onChange={e => f("shortDescription", e.target.value)} placeholder="A concise product summary" /></div>
+                  <div className="space-y-1.5"><Label>Description</Label><Textarea value={form.description} onChange={e => f("description", e.target.value)} placeholder="Materials, features, care instructions…" rows={5} /></div>
+                </section>
 
-            <div className="col-span-3 space-y-2">
+                <section className="rounded-xl border bg-card p-5 space-y-4" aria-labelledby="media-heading">
+                  <div className="flex items-start justify-between gap-3">
+                    <div><h3 id="media-heading" className="font-semibold">Media</h3><p className="text-xs text-muted-foreground">The first image is the main product thumbnail. Reorder or choose any image as main.</p></div>
+                    <Label className="cursor-pointer" htmlFor="product-media-input"><Input id="product-media-input" className="sr-only" type="file" accept="image/*" multiple onChange={handleImageUpload} disabled={uploadingProductImage || media.length >= 10 || !form.companyId} /><span className="inline-flex h-9 items-center rounded-md border px-3 text-sm font-medium hover:bg-accent"><ImagePlus className="w-4 h-4 mr-2" />Add images</span></Label>
+                  </div>
+                  {uploadingProductImage && <p className="text-xs text-muted-foreground flex items-center gap-2"><Loader2 className="w-3.5 h-3.5 animate-spin" />Uploading images…</p>}
+                  {media.length ? (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      {media.map((image, index) => (
+                        <div
+                          key={image.key}
+                          className={`group relative rounded-lg border p-2 ${index === 0 ? "ring-2 ring-primary/50" : ""}`}
+                          draggable
+                          onDragStart={event => event.dataTransfer.setData("text/product-image-index", String(index))}
+                          onDragOver={event => event.preventDefault()}
+                          onDrop={event => {
+                            event.preventDefault()
+                            const fromIndex = Number(event.dataTransfer.getData("text/product-image-index"))
+                            if (Number.isInteger(fromIndex)) moveImageTo(fromIndex, index)
+                          }}
+                        >
+                          <img src={image.preview} alt={`${form.name || "Product"} image ${index + 1}`} className="w-full aspect-square object-cover rounded-md bg-muted" />
+                          {index === 0 && <Badge className="absolute top-3 left-3 gap-1"><Star className="w-3 h-3 fill-current" />Main</Badge>}
+                          <Button type="button" size="icon" variant="secondary" className="absolute top-3 right-3 w-7 h-7" aria-label={`Remove image ${index + 1}`} onClick={() => removeImage(index)}><X className="w-3.5 h-3.5" /></Button>
+                          <div className="flex items-center justify-between gap-1 pt-2">
+                            <div className="flex gap-1">
+                              <Button type="button" size="icon" variant="ghost" className="w-7 h-7" disabled={index === 0} aria-label={`Move image ${index + 1} left`} onClick={() => moveImage(index, -1)}><ArrowLeft className="w-3.5 h-3.5" /></Button>
+                              <Button type="button" size="icon" variant="ghost" className="w-7 h-7" disabled={index === media.length - 1} aria-label={`Move image ${index + 1} right`} onClick={() => moveImage(index, 1)}><ArrowRight className="w-3.5 h-3.5" /></Button>
+                            </div>
+                            {index > 0 && <Button type="button" size="sm" variant="ghost" className="h-7 text-xs" onClick={() => makeMainImage(index)}>Make main</Button>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : <button type="button" className="w-full rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground" onClick={() => document.getElementById("product-media-input")?.click()}><ImagePlus className="w-6 h-6 mx-auto mb-2 opacity-60" />Add up to 10 product images</button>}
+                  {removedImageIds.length > 0 && <p className="text-xs text-muted-foreground">{removedImageIds.length} existing image{removedImageIds.length === 1 ? "" : "s"} will be removed only after you save.</p>}
+                </section>
+
+                <section className="rounded-xl border bg-card p-5 space-y-4" aria-labelledby="pricing-heading">
+                  <h3 id="pricing-heading" className="font-semibold">Pricing</h3>
+                  <div className="grid sm:grid-cols-3 gap-4">
+                    <div className="space-y-1.5"><Label>Sale price (₹) *</Label><Input value={form.price} onChange={e => f("price", e.target.value)} type="number" min="0" data-testid="input-product-price" /></div>
+                    <div className="space-y-1.5"><Label>MRP (₹)</Label><Input value={form.mrp} onChange={e => f("mrp", e.target.value)} type="number" min="0" /></div>
+                    <div className="space-y-1.5"><Label>Cost per item (₹)</Label><Input value={form.costPrice} onChange={e => f("costPrice", e.target.value)} type="number" min="0" /></div>
+                  </div>
+                  <div className="space-y-1.5 max-w-[200px]"><Label>GST (%)</Label><Input value={form.gst} onChange={e => f("gst", e.target.value)} type="number" min="0" /></div>
+                </section>
+
+                <section className="rounded-xl border bg-card p-5 space-y-4" aria-labelledby="inventory-heading">
+                  <h3 id="inventory-heading" className="font-semibold">Inventory</h3>
+                  <div className="grid sm:grid-cols-3 gap-4">
+                    <div className="space-y-1.5"><Label>SKU</Label><div className="flex gap-2"><Input value={form.sku} onChange={e => f("sku", e.target.value)} placeholder="Generated if blank" /><Button type="button" variant="outline" size="icon" onClick={generateSku} disabled={generatingSku} aria-label="Generate SKU"><ScanBarcode className="w-4 h-4" /></Button></div></div>
+                    <div className="space-y-1.5"><Label>Stock quantity</Label><Input value={form.stockQuantity} onChange={e => f("stockQuantity", e.target.value)} type="number" min="0" /></div>
+                    <div className="space-y-1.5"><Label>Reorder level</Label><Input value={form.reorderLevel} onChange={e => f("reorderLevel", e.target.value)} type="number" min="0" /></div>
+                  </div>
+                  <div className="space-y-1.5"><Label>Warehouse location</Label><Input value={form.warehouseLocation} onChange={e => f("warehouseLocation", e.target.value)} placeholder="Warehouse A, rack 3" /></div>
+                </section>
+
+                <section className="rounded-xl border bg-card p-5 space-y-3">
               <div className="flex items-center justify-between">
-                <Label>Variants</Label>
+                    <div><h3 className="font-semibold">Variants</h3><p className="text-xs text-muted-foreground">Optional sizes, colors or other choices.</p></div>
                 <Button size="sm" variant="outline" onClick={addVariant} type="button">Add variant</Button>
               </div>
               {variants.length === 0 && <p className="text-xs text-muted-foreground">No variants yet</p>}
@@ -767,24 +980,45 @@ export default function Inventory() {
                   </div>
                 </div>
               ))}
-            </div>
+                </section>
+              </div>
 
-            {editing && (
-              <div className="col-span-3 flex gap-2">
+              <aside className="space-y-5">
+                <section className="rounded-xl border bg-card p-5 space-y-4">
+                  <h3 className="font-semibold">Status</h3>
+                  <Select value={form.status} onValueChange={v => f("status", v)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="active">Active</SelectItem><SelectItem value="inactive">Inactive</SelectItem></SelectContent></Select>
+                  <div className="space-y-1.5"><Label>Company *</Label><Select value={form.companyId} onValueChange={v => f("companyId", v)}><SelectTrigger><SelectValue placeholder="Select company" /></SelectTrigger><SelectContent>{companies?.map(c => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}</SelectContent></Select></div>
+                </section>
+                <section className="rounded-xl border bg-card p-5 space-y-4">
+                  <div><h3 className="font-semibold">Organization</h3><p className="text-xs text-muted-foreground">Used for filtering and reporting.</p></div>
+                  <div className="space-y-1.5"><Label>Brand</Label><Input value={form.brand} onChange={e => f("brand", e.target.value)} /></div>
+                  <div className="space-y-1.5"><Label>Category *</Label><Input value={form.category} onChange={e => f("category", e.target.value)} placeholder="e.g. Apparel" data-testid="input-product-category" /></div>
+                  <div className="space-y-1.5"><Label>Subcategory</Label><Input value={form.subcategory} onChange={e => f("subcategory", e.target.value)} /></div>
+                  <div className="space-y-1.5"><Label>HSN code</Label><Input value={form.hsn} onChange={e => f("hsn", e.target.value)} /></div>
+                </section>
+                <section className="rounded-xl border bg-card p-5 space-y-4">
+                  <h3 className="font-semibold">Shipping</h3>
+                  <div className="space-y-1.5"><Label>Weight</Label><Input value={form.weight} onChange={e => f("weight", e.target.value)} placeholder="e.g. 250g" /></div>
+                  <div className="space-y-1.5"><Label>Dimensions</Label><Input value={form.dimensions} onChange={e => f("dimensions", e.target.value)} placeholder="L × W × H cm" /></div>
+                </section>
+                <section className="rounded-xl border bg-card p-5 space-y-3">
+                  <Label className="flex items-center gap-1.5"><Link className="w-3.5 h-3.5" />Source / product URL</Label>
+                  <div className="flex gap-2"><Input value={form.sourceLink} onChange={e => f("sourceLink", e.target.value)} placeholder="https://…" /><Button type="button" variant="outline" size="icon" aria-label="Generate product URL" onClick={() => f("sourceLink", autoGenerateSourceLink(form.name, form.sku))} disabled={!form.name && !form.sku}><RefreshCw className="w-4 h-4" /></Button></div>
+                </section>
+                {editing && (
+                  <section className="rounded-xl border bg-card p-5 flex flex-col gap-2">
                 <Button variant="outline" onClick={generateBarcodeImage} disabled={generatingBarcode} className="gap-2"><ScanBarcode className="w-4 h-4" /> {barcodeImage ? "Regenerate barcode" : "Generate barcode"}</Button>
                 <Button variant="outline" onClick={generateMarketplaceImages} disabled={generatingMarketplace} className="gap-2"><ImagePlus className="w-4 h-4" /> Marketplace images</Button>
-              </div>
-            )}
-            {barcodeImage && (
-              <div className="col-span-3">
-                <img src={barcodeImage} alt="Barcode" className="h-16 object-contain border rounded-md p-1" />
-              </div>
-            )}
+                    {barcodeImage && <img src={barcodeImage} alt="Barcode" className="h-16 object-contain border rounded-md p-1" />}
+                  </section>
+                )}
+              </aside>
+            </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="px-6 py-4 border-t bg-background">
             <Button variant="outline" onClick={() => setShowDialog(false)}>Cancel</Button>
-            <Button onClick={handleSave} disabled={saving || !form.name || !form.price || !form.companyId}>
-              {saving ? "Saving…" : editing ? "Save Changes" : "Add Product"}
+            <Button onClick={handleSave} disabled={saving || !form.name || !form.category || !form.price || !form.companyId} data-testid="button-save-product">
+              {saving ? "Saving…" : editing ? "Save changes" : draftQueue.length > draftIndex + 1 ? "Save & review next" : "Save product"}
             </Button>
           </DialogFooter>
         </DialogContent>

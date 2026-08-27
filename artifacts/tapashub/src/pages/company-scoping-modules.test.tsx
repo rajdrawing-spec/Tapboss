@@ -63,7 +63,7 @@ const COMPANY_B = {
 
 // Per-company fixtures keyed by companyId, one identifying row per company.
 const productsByCompany: Record<string, any[]> = {
-  "1": [{ id: 11, name: "Acme Widget", companyId: 1, companyName: "Acme Foods", sku: "A-1", category: "Food", price: 100, costPrice: 40, stockQuantity: 5, reorderLevel: 10, status: "active" }],
+  "1": [{ id: 11, name: "Acme Widget", companyId: 1, companyName: "Acme Foods", sku: "A-1", category: "Food", price: 100, costPrice: 40, stockQuantity: 5, reorderLevel: 10, status: "active", imageUrl: "/objects/acme-widget" }],
   "2": [{ id: 21, name: "Brava Fabric", companyId: 2, companyName: "Brava Textiles", sku: "B-1", category: "Textiles", price: 200, costPrice: 80, stockQuantity: 50, reorderLevel: 10, status: "active" }],
 }
 const txByCompany: Record<string, any[]> = {
@@ -106,6 +106,7 @@ beforeEach(() => {
     if (url.includes("/api/finance/pnl-summary")) {
       return jsonResponse({ revenue: 1000, grossProfit: 600, grossMargin: 60, netProfit: 400, netMargin: 40, operatingExpenses: 200 })
     }
+    if (url.includes("/api/ai-products/generate-sku")) return jsonResponse({ sku: "APP-MANUAL-001" })
     if (url.includes("/api/finance/transactions")) return jsonResponse(listFor(txByCompany, companyId))
     if (url.includes("/api/products")) return jsonResponse(listFor(productsByCompany, companyId))
     if (url.includes("/api/employees")) return jsonResponse(listFor(employeesByCompany, companyId))
@@ -186,6 +187,48 @@ describe("company scoping — module list views", () => {
   it("Inventory renders only the active company's products and rescopes on switch", async () => {
     renderPage(Inventory)
     await assertScoped({ pathFragment: "/api/products", aText: "Acme Widget", bText: "Brava Fabric" })
+  })
+
+  it("Inventory normalizes persisted object paths for browser image previews", async () => {
+    renderPage(Inventory)
+    fireEvent.click(screen.getByTestId("pick-a"))
+    const image = await screen.findByAltText("Acme Widget")
+    expect(image).toHaveAttribute("src", "/api/storage/objects/acme-widget")
+  })
+
+  it("Inventory generates a SKU when a manual product is saved with the field blank", async () => {
+    renderPage(Inventory)
+    fireEvent.click(screen.getByTestId("pick-a"))
+    await screen.findByText("Acme Widget")
+    fireEvent.click(screen.getByRole("button", { name: "Add Product" }))
+    fireEvent.change(screen.getByTestId("input-product-name"), { target: { value: "Manual Product" } })
+    fireEvent.change(screen.getByTestId("input-product-category"), { target: { value: "Apparel" } })
+    fireEvent.change(screen.getByTestId("input-product-price"), { target: { value: "100" } })
+    expect(screen.getByPlaceholderText("Generated if blank")).toHaveValue("")
+    expect(screen.getByTestId("button-save-product")).toBeEnabled()
+    fireEvent.click(screen.getByTestId("button-save-product"))
+
+    await waitFor(() => {
+      const request = fetchSpy.mock.calls.find(call => String(call[0]).includes("/api/ai-products/generate-sku"))
+      expect(request).toBeTruthy()
+      expect(JSON.parse(String(request?.[1]?.body))).toMatchObject({ companyId: 1, name: "Manual Product", category: "Apparel" })
+    })
+  })
+
+  it("Inventory exports only explicitly selected product IDs to Excel", async () => {
+    renderPage(Inventory)
+    fireEvent.click(screen.getByTestId("pick-a"))
+    await screen.findByText("Acme Widget")
+
+    fireEvent.click(screen.getByTestId("checkbox-product-11"))
+    expect(screen.getByTestId("status-selection")).toHaveTextContent("1 selected")
+    fireEvent.click(screen.getByTestId("button-export-xlsx"))
+
+    await waitFor(() => {
+      const exportCall = fetchSpy.mock.calls.find(call => String(call[0]).includes("/api/ai-products/export-xlsx"))
+      expect(exportCall).toBeTruthy()
+      expect(JSON.parse(String(exportCall?.[1]?.body))).toEqual({ companyId: 1, productIds: [11] })
+    })
   })
 
   it("Finance renders only the active company's transactions and rescopes on switch", async () => {
