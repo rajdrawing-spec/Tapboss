@@ -28,6 +28,7 @@ tar \
   --exclude='./.env' \
   --exclude='./.env.*' \
   --exclude='*.tsbuildinfo' \
+  --exclude='*.tar.gz' \
   -cf - \
   package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json tsconfig.json \
   artifacts lib scripts deploy/hostinger \

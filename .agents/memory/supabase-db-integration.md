@@ -1,19 +1,25 @@
 ---
-name: Supabase DB integration
-description: TAPBOSS uses SUPABASE_DB_URL as the primary persistent database; DATABASE_URL is Replit's managed dev DB (fallback in dev only).
+name: Portable PostgreSQL configuration
+description: TAPBOSS can use Supabase or another external PostgreSQL database in self-hosted production.
 ---
 
 ## Rule
-`SUPABASE_DB_URL` is the primary production database (Supabase Postgres).
-`DATABASE_URL` (Replit managed) is only the dev fallback — never used in production.
+Prefer `SUPABASE_DB_URL` when it is configured, preserving the existing
+Supabase production database. Self-hosted production may instead use a standard
+`DATABASE_URL` for another external PostgreSQL provider.
 
 ## Why
-Replit's publish-time "overwrite with dev data" option only touches the managed `DATABASE_URL` database, not an external SUPABASE_DB_URL. This prevents production data loss on redeploy.
+Hostinger/self-hosted deployments are outside Replit's database lifecycle, so
+the runtime must accept a provider-neutral PostgreSQL connection without
+forcing a Supabase-specific variable.
 
 ## How to apply
-- `lib/db/src/index.ts` and `lib/db/drizzle.config.ts` both: prefer SUPABASE_DB_URL, fall back to DATABASE_URL only when NODE_ENV !== "production".
-- Production deploys MUST have SUPABASE_DB_URL in deployment secrets.
+- Prefer `SUPABASE_DB_URL` when preserving the current Supabase production DB;
+  otherwise set `DATABASE_URL` to the chosen external PostgreSQL service.
+- SSL is enabled by default for hosted databases. Disable it only for a trusted
+  local database, and keep the pool small enough for the provider's limits.
 - `executeSql({ environment: "production" })` in CodeExecution still queries Replit's managed prod DB replica — it does NOT query Supabase. Use the app's own API or a direct pg connection for Supabase queries.
-- Pool config for Supabase: `ssl: { rejectUnauthorized: false }`, `max: 5` (free tier ~60 connection limit).
+- Keep the Supabase pool default small; other providers can tune the pool with
+  the documented environment variable.
 - `drizzle-kit push` automatically targets Supabase when SUPABASE_DB_URL is set.
 - Schema was pushed to Supabase via `drizzle-kit push --force` and boot seed seeded 8 companies + 12 roles.

@@ -9,7 +9,7 @@
 - [Object storage + Clerk auth](object-storage-clerk-auth.md) — swap the storage template's req.isAuthenticated() guard for requireAuth/requireSuperAdmin; store full /api/storage path in DB.
 - [TAPBOSS tenant scoping endpoints](tbos-tenant-scoping-endpoints.md) — ~17 routes trust a client companyId with no authz; use companyScope(req) + 403; never pass [] to drizzle inArray (guard length before DB).
 - [TBOS integrations framework](tbos-integrations-framework.md) — credential UI stores AES-256-GCM in DB; all 17 adapters registered with real testConnection; embed-check + portal launcher; SESSION_SECRET required for encryption.
-- [Supabase DB integration](supabase-db-integration.md) — SUPABASE_DB_URL is the primary prod DB; DATABASE_URL (Replit) is dev-only fallback; production requires SUPABASE_DB_URL or it throws.
+- [Portable PostgreSQL configuration](supabase-db-integration.md) — prefer SUPABASE_DB_URL when set, but self-hosted production can use a standard DATABASE_URL with configurable SSL/pooling.
 - [TBOS feature modules](tbos-feature-modules.md) — notifications fire on state transitions (not every write) via void emitNotification; last-synced only on success; allowlist attachment URL schemes; object read-ACL still disabled.
 - [TBOS fund allocation & finance sync](tbos-fund-allocation-sync.md) — allocations = paired ALLOC-<id> txns; order revenue keyed ORDER-/REFUND-; idempotency via partial unique index + FOR UPDATE; threshold approval gating.
 - [TBOS client caching](tbos-client-caching.md) — any user-scoped react-query cache key must include the Clerk userId; never rely on a listener-based cache clear alone for cross-user isolation.
@@ -20,7 +20,7 @@
 - [TBOS frontend auth-mock in tests](tbos-frontend-auth-mock.md) — company-scoping tests that render admin views must vi.mock @/contexts/auth-context with hasPermission:()=>true; without it the component routes to the self-service view and tests fail silently.
 - [TBOS client company scoping](tbos-client-company-scoping.md) — scoped list pages must pass activeCompany.id in BOTH params and queryKey, or they leak/never rescope.
 - [TBOS Vitest setup](tbos-vitest-config.md) — tapashub tests use standalone vitest.config.ts (vite.config throws without PORT/BASE_PATH); mock the @clerk/react boundary + /api/auth/me instead of real OAuth.
-- [Resend transactional email](resend-email.md) — invites send via Resend connector proxy("resend","/emails"); from must be a verified domain; best-effort (never rolls back the write); always esc() template values.
+- [Resend transactional email](resend-email.md) — self-hosting uses direct Resend HTTPS with RESEND_API_KEY; verified sender domain, best-effort writes, and HTML escaping remain mandatory.
 - [TBOS browser workspace](tbos-browser-workspace.md) — Playwright streaming arch; chromium-bidi/* must be in esbuild external; URL from catalog (SSRF); inFlight backpressure; retryKey reconnect; passive wheel workaround.
 - [Replit WS proxy limitation](replit-ws-proxy.md) — Replit path-proxy handles HTTP but drops WS upgrades; fix via Vite server.proxy with ws:true pointing to localhost:API_PORT.
 - [TBOS realtime reliability](tbos-realtime-reliability.md) — socket auth must be a function (single-use tokens), socket path must be /api/socket.io for prod routing, LiveKit reconnect via token-keyed remount + leavingRef.

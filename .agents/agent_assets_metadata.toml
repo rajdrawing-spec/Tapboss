@@ -6,3 +6,10 @@ id = "CWdcsiOugJ0Ea3Rg0n7rq"
 uri = "file://attached_assets/generated_audio/meeting_test_audio.mp3"
 type = "audio"
 title = "meeting test audio"
+
+[[outputs]]
+id = "2bcRJe7ZLHitmS-WhElVV"
+uri = "file://deploy/hostinger/tapboss-hostinger-package.tar.gz"
+type = "unspecified"
+title = "TAPBOSS Hostinger Production Package"
+description = "Validated self-hosting archive with persistent storage, legacy Replit object export/verification utilities, direct Resend/Gemini support, safe frontend cache policy, PM2/Nginx configuration, and deployment/backup guide."

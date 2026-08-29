@@ -75,12 +75,24 @@ const webDistCandidates = [
 ].filter((value): value is string => Boolean(value));
 const webDist = webDistCandidates.map((value) => path.resolve(value)).find(existsSync);
 if (webDist) {
-  app.use(express.static(webDist, { index: false, maxAge: "1y" }));
+  app.use(express.static(webDist, {
+    index: false,
+    maxAge: "1h",
+    setHeaders(res, filePath) {
+      const fileName = path.basename(filePath);
+      if (fileName === "index.html" || fileName === "sw.js" || fileName === "registerSW.js" || fileName === "manifest.webmanifest") {
+        res.setHeader("Cache-Control", "no-cache, must-revalidate");
+      } else if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+        res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+      }
+    },
+  }));
   app.use((req, res, next) => {
     if (req.method !== "GET" || req.path.startsWith("/api/") || path.extname(req.path)) {
       next();
       return;
     }
+    res.setHeader("Cache-Control", "no-cache, must-revalidate");
     res.sendFile(path.join(webDist, "index.html"), (error) => {
       if (error && !res.headersSent) next(error);
     });

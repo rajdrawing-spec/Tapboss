@@ -1,20 +1,20 @@
 ---
 name: Resend transactional email (TBOS)
-description: How invite/transactional emails are sent via the Resend connector, and the escaping/from-address constraints.
+description: How self-hosted invite/transactional emails use Resend HTTPS, and the escaping/from-address constraints.
 ---
 
 # Resend transactional email
 
-Email delivery uses the Resend connector via `@replit/connectors-sdk`
-(`new ReplitConnectors().proxy("resend", "/emails", { method, headers, body })`).
-`proxy` returns a `fetch` `Response`; JSON-stringify the body and set
-`Content-Type: application/json`. Success body is `{ id }`.
+Email delivery uses Resend's standard HTTPS API with a server-only
+`RESEND_API_KEY`. This keeps Hostinger deployments independent of Replit
+Connectors. JSON-stringify the request body and set the bearer authorization
+and content-type headers. Success body is `{ id }`.
 
 ## From address
 - Must be a domain **verified in Resend**. `onboarding@resend.dev` works for
   testing but only delivers to the Resend account owner's own address.
 - Made configurable via `EMAIL_FROM` env (default `onboarding@resend.dev`), and
-  the CTA link via `APP_URL` (falls back to `https://$REPLIT_DEV_DOMAIN/tapashub`).
+  the CTA link via the explicit canonical `APP_URL`.
 
 **Why:** the user asked for a gmail.com from-address, which can never be verified;
 transactional providers reject unverified sender domains.
@@ -33,5 +33,5 @@ transactional providers reject unverified sender domains.
 
 **How to apply:** when adding a new email template in
 `artifacts/api-server/src/lib/email.ts`, wrap every `${...}` dynamic token in
-`esc(...)`; cover it with an injection test in `email.test.ts` (mock the SDK via
-`vi.hoisted` — the mock factory runs before top-level consts otherwise).
+`esc(...)`; cover it with an injection test in `email.test.ts` by mocking
+`fetch` through `vi.hoisted` before the module runs.

@@ -25,6 +25,38 @@ You need:
 
 ## 1. Upload and install
 
+### Preserve existing Replit uploads before cutover
+
+The runtime keeps the previous Replit Object Storage reader active whenever
+`PRIVATE_OBJECT_DIR` exists and `OBJECT_STORAGE_DIR` is not set, so deploying
+this code in Replit does not break existing files. Before moving the database
+to Hostinger, stop writes, back up PostgreSQL, and run this command inside the
+original Replit workspace while its object-storage sidecar is still available:
+
+```bash
+pnpm --filter @workspace/api-server run export:replit-objects -- \
+  /tmp/tapboss-object-export --rewrite-db
+tar -czf /tmp/tapboss-object-export.tar.gz -C /tmp tapboss-object-export
+```
+
+The exporter copies every private/public bucket object, preserves the
+`/objects/...` relative layout, records SHA-256 hashes, and transactionally
+rewrites any legacy `storage.googleapis.com` values in PostgreSQL text/jsonb
+columns to `/objects/...`. Transfer this data archive privately; it is
+deliberately not included in the source handoff archive.
+
+After extracting the source and data archives on Hostinger:
+
+```bash
+rsync -a /path/to/tapboss-object-export/objects/ /home/your-user/tapboss-data/objects/
+rsync -a /path/to/tapboss-object-export/public/ /home/your-user/tapboss-data/public/
+pnpm --filter @workspace/api-server run verify:object-import -- /path/to/tapboss-object-export
+```
+
+Do not set `OBJECT_STORAGE_DIR` on the final Hostinger process until this
+verification succeeds. Keep the old bucket unchanged until several restored
+files have been opened from the live app.
+
 Extract the archive into a directory such as `/home/your-user/tapboss`.
 Node.js 20.6 or newer and pnpm 9 or newer are recommended. Node 20.6+
 provides the built-in `--env-file=.env` support used by the included start
@@ -138,6 +170,11 @@ pm2 restart tapboss --update-env
 
 Back up both the PostgreSQL database and the complete persistent data directory.
 Do not delete `tapboss-data` when replacing application releases.
+
+After each frontend upgrade, verify that `/` and a direct route such as
+`/inventory` return `Cache-Control: no-cache`, while a hashed `/assets/...`
+file returns `immutable`. This prevents browsers from pinning stale HTML that
+references assets from a previous release.
 
 ## Troubleshooting
 

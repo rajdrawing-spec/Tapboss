@@ -13,6 +13,23 @@ import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { basename, join, normalize, relative, resolve } from "node:path";
 import { Readable } from "node:stream";
 import { randomUUID } from "node:crypto";
+import { Storage, type File } from "@google-cloud/storage";
+
+const REPLIT_SIDECAR_ENDPOINT = "http://127.0.0.1:1106";
+const legacyObjectStorageClient = new Storage({
+  credentials: {
+    audience: "replit",
+    subject_token_type: "access_token",
+    token_url: `${REPLIT_SIDECAR_ENDPOINT}/token`,
+    type: "external_account",
+    credential_source: {
+      url: `${REPLIT_SIDECAR_ENDPOINT}/credential`,
+      format: { type: "json", subject_token_field_name: "access_token" },
+    },
+    universe_domain: "googleapis.com",
+  },
+  projectId: "",
+});
 
 export class ObjectNotFoundError extends Error {
   constructor() {
@@ -113,7 +130,26 @@ function objectFileAt(root: string, objectName: string): LocalObjectFile {
   return new LocalObjectFile(`/objects/${safeName}`, filePath, `${filePath}.meta.json`);
 }
 
-async function responseFromFile(file: LocalObjectFile, cacheTtlSec = 3600): Promise<Response> {
+type StoredObjectFile = LocalObjectFile | File;
+
+function parseCloudPath(value: string): { bucketName: string; objectName: string } {
+  const pathValue = value.startsWith("/") ? value.slice(1) : value;
+  const slash = pathValue.indexOf("/");
+  if (slash <= 0 || slash === pathValue.length - 1) throw new ObjectNotFoundError();
+  return { bucketName: pathValue.slice(0, slash), objectName: pathValue.slice(slash + 1) };
+}
+
+function legacyMode(): boolean {
+  return !process.env.OBJECT_STORAGE_DIR?.trim() && Boolean(process.env.PRIVATE_OBJECT_DIR?.trim());
+}
+
+function legacyEntityRoot(): string {
+  const root = process.env.PRIVATE_OBJECT_DIR?.trim();
+  if (!root) throw new Error("PRIVATE_OBJECT_DIR is required for legacy Replit object storage");
+  return root.replace(/\/$/, "");
+}
+
+async function responseFromFile(file: StoredObjectFile, cacheTtlSec = 3600): Promise<Response> {
   const [metadata] = await file.getMetadata();
   const stream = file.createReadStream();
   const headers: Record<string, string> = {
@@ -138,10 +174,19 @@ export class ObjectStorageService {
   }
 
   getPrivateObjectDir(): string {
-    return this.privateDir();
+    return legacyMode() ? legacyEntityRoot() : this.privateDir();
   }
 
-  async searchPublicObject(filePath: string): Promise<LocalObjectFile | null> {
+  async searchPublicObject(filePath: string): Promise<StoredObjectFile | null> {
+    if (legacyMode()) {
+      const roots = (process.env.PUBLIC_OBJECT_SEARCH_PATHS || "").split(",").map((v) => v.trim()).filter(Boolean);
+      for (const root of roots) {
+        const { bucketName, objectName } = parseCloudPath(`${root.replace(/\/$/, "")}/${assertSafeObjectName(filePath)}`);
+        const file = legacyObjectStorageClient.bucket(bucketName).file(objectName);
+        if ((await file.exists())[0]) return file;
+      }
+      return null;
+    }
     try {
       const file = objectFileAt(this.publicDir(), filePath);
       return (await file.exists())[0] ? file : null;
@@ -150,7 +195,7 @@ export class ObjectStorageService {
     }
   }
 
-  async downloadObject(file: LocalObjectFile, cacheTtlSec = 3600): Promise<Response> {
+  async downloadObject(file: StoredObjectFile, cacheTtlSec = 3600): Promise<Response> {
     return responseFromFile(file, cacheTtlSec);
   }
 
@@ -160,19 +205,29 @@ export class ObjectStorageService {
    */
   async getObjectEntityUploadURL(): Promise<string> {
     const objectId = `uploads/${randomUUID()}`;
-    await mkdir(join(this.privateDir(), "uploads"), { recursive: true });
+    if (!legacyMode()) await mkdir(join(this.privateDir(), "uploads"), { recursive: true });
     return `/objects/${objectId}`;
   }
 
   async uploadPrivateObject(buffer: Buffer, contentType: string, prefix = "uploads"): Promise<string> {
     const entityId = `${assertSafeObjectName(prefix)}/${randomUUID()}`;
-    const file = objectFileAt(this.privateDir(), entityId);
-    await file.save(buffer, { contentType });
-    return `/objects/${entityId}`;
+    const objectPath = `/objects/${entityId}`;
+    await this.saveObjectAtPath(objectPath, buffer, contentType);
+    return objectPath;
   }
 
   async saveObjectAtPath(objectPath: string, buffer: Buffer, contentType: string): Promise<void> {
     if (!objectPath.startsWith("/objects/")) throw new ObjectNotFoundError();
+    if (legacyMode()) {
+      const { bucketName, objectName } = parseCloudPath(
+        `${legacyEntityRoot()}/${assertSafeObjectName(objectPath.slice("/objects/".length))}`,
+      );
+      await legacyObjectStorageClient.bucket(bucketName).file(objectName).save(buffer, {
+        contentType,
+        resumable: false,
+      });
+      return;
+    }
     const file = objectFileAt(this.privateDir(), objectPath.slice("/objects/".length));
     await file.save(buffer, { contentType });
   }
@@ -182,14 +237,30 @@ export class ObjectStorageService {
     await file.delete();
   }
 
-  async getObjectEntityFile(objectPath: string): Promise<LocalObjectFile> {
+  async getObjectEntityFile(objectPath: string): Promise<StoredObjectFile> {
     if (!objectPath.startsWith("/objects/")) throw new ObjectNotFoundError();
+    if (legacyMode()) {
+      const { bucketName, objectName } = parseCloudPath(
+        `${legacyEntityRoot()}/${assertSafeObjectName(objectPath.slice("/objects/".length))}`,
+      );
+      const file = legacyObjectStorageClient.bucket(bucketName).file(objectName);
+      if (!(await file.exists())[0]) throw new ObjectNotFoundError();
+      return file;
+    }
     const file = objectFileAt(this.privateDir(), objectPath.slice("/objects/".length));
     if (!(await file.exists())[0]) throw new ObjectNotFoundError();
     return file;
   }
 
   normalizeObjectEntityPath(rawPath: string): string {
+    if (rawPath.startsWith("https://storage.googleapis.com/")) {
+      const url = new URL(rawPath);
+      const cloudPath = url.pathname.replace(/^\//, "");
+      const root = process.env.PRIVATE_OBJECT_DIR?.trim()?.replace(/^\/|\/$/g, "");
+      if (root && cloudPath.startsWith(`${root}/`)) {
+        return `/objects/${cloudPath.slice(root.length + 1)}`;
+      }
+    }
     return rawPath;
   }
 
