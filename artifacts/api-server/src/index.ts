@@ -9,6 +9,8 @@ import { startAdSyncScheduler } from "./lib/ad-sync";
 
 import { registerAdapters } from "./lib/adapters";
 import { applyMigrations, repairOrphanedAllocations, removeAutoAllocationRows } from "./lib/migrations";
+import { initSocketServer } from "./lib/chat/socket-server";
+import { setupBrowserWebSocket } from "./browser-sessions/ws-handler";
 
 const rawPort = process.env["PORT"];
 
@@ -29,6 +31,8 @@ if (Number.isNaN(port) || port <= 0) {
 }
 
 const server = http.createServer(app);
+initSocketServer(server);
+setupBrowserWebSocket(server);
 
 server.listen(port, () => {
   logger.info({ port }, "Server listening");

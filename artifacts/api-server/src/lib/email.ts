@@ -1,7 +1,5 @@
-import { ReplitConnectors } from "@replit/connectors-sdk";
-
 /**
- * Transactional email delivery via the Resend connector.
+ * Transactional email delivery via Resend's standard HTTPS API.
  *
  * Sending is intentionally best-effort: a failure to deliver must never roll
  * back the underlying action (creating an invitation, adding a shareholder).
@@ -13,20 +11,10 @@ import { ReplitConnectors } from "@replit/connectors-sdk";
  * owner's address). Set EMAIL_FROM once a real domain is verified.
  */
 
-const connectors = new ReplitConnectors();
-
 const _emailFromRaw = process.env.EMAIL_FROM?.trim() || "";
 
 // Guard against a common misconfiguration where a URL is pasted into EMAIL_FROM.
 // A valid sender is an RFC 5321 address or "Display Name <addr@domain>" — never a URL.
-if (_emailFromRaw && /^https?:\/\//i.test(_emailFromRaw)) {
-  console.error(
-    `[email] EMAIL_FROM is set to a URL ("${_emailFromRaw}") instead of an email address. ` +
-    `All email delivery will fail until this is corrected. ` +
-    `Set EMAIL_FROM to e.g. "TapasHub <noreply@yourdomain.com>".`
-  );
-}
-
 const FROM = _emailFromRaw && !/^https?:\/\//i.test(_emailFromRaw)
   ? _emailFromRaw
   : "TapasHub <onboarding@resend.dev>";
@@ -35,8 +23,6 @@ const FROM = _emailFromRaw && !/^https?:\/\//i.test(_emailFromRaw)
 export function appUrl(): string {
   const explicit = process.env.APP_URL?.trim();
   if (explicit) return explicit.replace(/\/$/, "");
-  const dev = process.env.REPLIT_DEV_DOMAIN?.trim();
-  if (dev) return `https://${dev}/tapashub`;
   return "";
 }
 
@@ -66,9 +52,14 @@ async function send({ to, subject, html }: SendArgs): Promise<SendResult> {
   // Strip CR/LF from subject to prevent header injection attacks.
   subject = subject.replace(/[\r\n]+/g, " ").trim();
   try {
-    const resp = await connectors.proxy("resend", "/emails", {
+    const apiKey = process.env.RESEND_API_KEY?.trim();
+    if (!apiKey) return { ok: false, error: "RESEND_API_KEY is not configured" };
+    const resp = await fetch("https://api.resend.com/emails", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
       body: JSON.stringify({ from: FROM, to: [to], subject, html }),
     });
     if (!resp.ok) {

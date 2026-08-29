@@ -3,7 +3,7 @@ import {
   RequestUploadUrlBody,
   RequestUploadUrlResponse,
 } from '@workspace/api-zod';
-import { Router, type IRouter, type Request, type Response } from 'express';
+import { Router, raw, type IRouter, type Request, type Response } from 'express';
 
 import {
   ObjectNotFoundError,
@@ -41,7 +41,10 @@ router.post(
 
       res.json(
         RequestUploadUrlResponse.parse({
-          uploadURL,
+          // Self-hosted deployments receive a same-origin PUT endpoint. This
+          // keeps file bytes on the API server and works without a storage
+          // sidecar or browser CORS configuration.
+          uploadURL: `/api/storage/uploads/put/${objectPath.slice('/objects/'.length)}`,
           objectPath,
           metadata: { name, size, contentType },
         }),
@@ -49,6 +52,32 @@ router.post(
     } catch (error) {
       req.log.error({ err: error }, 'Error generating upload URL');
       res.status(500).json({ error: 'Failed to generate upload URL' });
+    }
+  },
+);
+
+router.put(
+  '/storage/uploads/put/*uploadId',
+  raw({ type: () => true, limit: '50mb' }),
+  async (req: Request, res: Response) => {
+    const rawId = req.params.uploadId;
+    const uploadId = Array.isArray(rawId) ? rawId.join('/') : rawId;
+    if (!uploadId || uploadId.includes('..') || uploadId.includes('\0')) {
+      res.status(400).json({ error: 'Invalid upload path' });
+      return;
+    }
+    try {
+      const objectPath = `/objects/${uploadId}`;
+      const body = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+      await objectStorageService.saveObjectAtPath(
+        objectPath,
+        body,
+        String(req.headers['content-type'] || 'application/octet-stream').split(';')[0],
+      );
+      res.status(204).end();
+    } catch (error) {
+      req.log.error({ err: error }, 'Error storing uploaded object');
+      res.status(500).json({ error: 'Failed to store uploaded object' });
     }
   },
 );

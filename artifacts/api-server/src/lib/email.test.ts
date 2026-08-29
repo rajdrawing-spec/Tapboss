@@ -4,12 +4,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
  * Outbound email templates interpolate user-/DB-controlled values (names,
  * company names, roles, email addresses) into HTML. Those values MUST be
  * escaped so a malicious value can't inject markup/links into a trusted,
- * branded email (phishing / content spoofing). We mock the Resend connector
+ * branded email (phishing / content spoofing). We mock the Resend HTTP API
  * to capture the exact payload that would be sent and assert on the HTML.
  */
 
-const { proxy } = vi.hoisted(() => ({
-  proxy: vi.fn(async (..._args: unknown[]) => ({
+const { resendFetch } = vi.hoisted(() => ({
+  resendFetch: vi.fn(async (..._args: unknown[]) => ({
     ok: true,
     status: 200,
     json: async () => ({ id: "test-id" }),
@@ -17,22 +17,20 @@ const { proxy } = vi.hoisted(() => ({
   })),
 }));
 
-vi.mock("@replit/connectors-sdk", () => ({
-  ReplitConnectors: class {
-    proxy = proxy;
-  },
-}));
-
 import { sendUserInviteEmail, sendShareholderInviteEmail } from "./email";
 
 function lastPayload() {
-  const call = proxy.mock.calls.at(-1)!;
-  return JSON.parse((call[2] as any).body) as { from: string; to: string[]; subject: string; html: string };
+  const call = resendFetch.mock.calls.at(-1)!;
+  return JSON.parse((call[1] as any).body) as { from: string; to: string[]; subject: string; html: string };
 }
 
 const INJECTION = `<script>alert(1)</script><a href="https://evil.example">click</a>`;
 
-beforeEach(() => proxy.mockClear());
+beforeEach(() => {
+  resendFetch.mockClear();
+  vi.stubEnv("RESEND_API_KEY", "test-key");
+  vi.stubGlobal("fetch", resendFetch);
+});
 
 describe("email HTML escaping", () => {
   it("escapes a malicious name in a user invite", async () => {

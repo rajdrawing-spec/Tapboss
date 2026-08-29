@@ -20,7 +20,9 @@ import { mkdirSync } from 'fs';
 import path from 'path';
 
 // Store profiles inside the workspace so they survive container restarts.
-const PROFILES_BASE = path.join(process.cwd(), '.browser-profiles');
+const PROFILES_BASE = path.resolve(
+  process.env.BROWSER_PROFILES_DIR || path.join(process.cwd(), 'data', '.browser-profiles'),
+);
 
 // ── Chromium discovery ───────────────────────────────────────────────────────
 
@@ -43,13 +45,11 @@ function findChromium(): string {
       // try next
     }
   }
-  throw new Error(
-    'Chromium not found in PATH. Add pkgs.chromium to replit.nix deps.',
-  );
+  throw new Error('Chromium not found in PATH. Install Chromium or set BROWSER_CHROMIUM_PATH.');
 }
 
 function getExecutablePath(): string {
-  if (!_executablePath) _executablePath = findChromium();
+  if (!_executablePath) _executablePath = process.env.BROWSER_CHROMIUM_PATH?.trim() || findChromium();
   return _executablePath;
 }
 
