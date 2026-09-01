@@ -148,7 +148,14 @@ export default function Inventory() {
   if (search) params.search = search
 
   const { data, isLoading, refetch } = useListProducts(params, {
-    query: { enabled: true, queryKey: getListProductsQueryKey(params) }
+    query: {
+      enabled: true,
+      queryKey: getListProductsQueryKey(params),
+      staleTime: 0,
+      refetchOnMount: "always",
+      refetchOnWindowFocus: true,
+    },
+    request: { cache: "no-store" },
   })
 
   React.useEffect(() => {
