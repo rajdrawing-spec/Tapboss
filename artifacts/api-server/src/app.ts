@@ -64,6 +64,18 @@ app.use(
   })),
 );
 
+// API responses are user- and company-scoped. Never allow browsers or shared
+// proxies to reuse a stale response (for example an earlier empty product list)
+// after the active company or signed-in user changes.
+app.use("/api", (_req, res, next) => {
+  delete _req.headers["if-none-match"];
+  delete _req.headers["if-modified-since"];
+  res.setHeader("Cache-Control", "private, no-store, max-age=0");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  next();
+});
+
 app.use("/api", router);
 
 // In a Hostinger deployment the API process can serve the Vite build directly,
