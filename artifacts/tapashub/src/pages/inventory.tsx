@@ -580,7 +580,14 @@ export default function Inventory() {
         throw new Error(body.error || "Import failed")
       }
       const stats = await res.json()
-      toast({ title: "Import complete", description: `${stats.success} added, ${stats.failed} failed` })
+      const details = Array.isArray(stats.errors) && stats.errors.length
+        ? ` ${stats.errors.slice(0, 3).join(" • ")}${stats.errors.length > 3 ? ` • +${stats.errors.length - 3} more` : ""}`
+        : ""
+      toast({
+        title: stats.failed ? (stats.success ? "Import partially complete" : "Import failed") : "Import complete",
+        description: `${stats.success} added, ${stats.failed} failed.${details}`,
+        variant: stats.failed ? "destructive" : "default",
+      })
       refetch(); setImporting(false)
     } catch (e: any) {
       toast({ title: "Error", description: e?.message || "Import failed", variant: "destructive" })
@@ -641,7 +648,14 @@ export default function Inventory() {
         throw new Error(body.error || "Import failed")
       }
       const stats = await res.json()
-      toast({ title: "Excel import complete", description: `${stats.success} added, ${stats.failed} failed` })
+      const details = Array.isArray(stats.errors) && stats.errors.length
+        ? ` ${stats.errors.slice(0, 3).join(" • ")}${stats.errors.length > 3 ? ` • +${stats.errors.length - 3} more` : ""}`
+        : ""
+      toast({
+        title: stats.failed ? (stats.success ? "Excel import partially complete" : "Excel import failed") : "Excel import complete",
+        description: `${stats.success} added, ${stats.failed} failed.${details}`,
+        variant: stats.failed ? "destructive" : "default",
+      })
       refetch(); setImporting(false)
     } catch (e: any) {
       toast({ title: "Error", description: e?.message || "Excel import failed", variant: "destructive" })

@@ -444,14 +444,7 @@ router.post("/ai-products/import-csv", requirePermission("inventory.manage"), as
         res.json({ total: 0, success: 0, failed: 0, errors: [] });
         return;
       }
-      const normalizedRecords = records.map(row => {
-        const next: Record<string, string> = {};
-        for (const [key, value] of Object.entries(row)) {
-          const normalizedKey = key.replace(/^\uFEFF/, "").trim().toLowerCase();
-          next[normalizedKey] = value;
-        }
-        return next;
-      });
+      const normalizedRecords = normalizeImportRecords(records);
       const requiredHeaders = ["name", "sku", "category", "price"];
       const missingHeaders = requiredHeaders.filter(h => !(h in normalizedRecords[0]));
       if (missingHeaders.length > 0) {
@@ -504,6 +497,33 @@ function cleanInteger(value: string | undefined): number {
   return Number.isFinite(num) ? num : 0;
 }
 
+function normalizeImportRecords(records: Record<string, string>[]): Record<string, string>[] {
+  const aliases: Record<string, string> = {
+    "product name": "name",
+    "product title": "name",
+    "product code": "sku",
+    "sku id": "sku",
+    "selling price": "price",
+    "sale price": "price",
+    "product type": "category",
+    "product category": "category",
+    "stock": "stockquantity",
+    "stock quantity": "stockquantity",
+    "cost price": "costprice",
+    "short description": "shortdescription",
+    "reorder level": "reorderlevel",
+    "warehouse location": "warehouselocation",
+  };
+  return records.map(row => {
+    const next: Record<string, string> = {};
+    for (const [key, value] of Object.entries(row)) {
+      const normalizedKey = key.replace(/^\uFEFF/, "").trim().toLowerCase();
+      next[aliases[normalizedKey] || normalizedKey.replace(/[\s_-]+/g, "")] = value;
+    }
+    return next;
+  });
+}
+
 router.post("/ai-products/import-jobs/:jobId/process", requirePermission("inventory.manage"), async (req, res) => {
   if (!gate(req, res)) return;
   try {
@@ -531,15 +551,9 @@ router.post("/ai-products/import-jobs/:jobId/process", requirePermission("invent
       return;
     }
 
-    // Normalize headers to lower-case and strip leading BOM char if present.
-    const normalizedRecords = records.map(row => {
-      const next: Record<string, string> = {};
-      for (const [key, value] of Object.entries(row)) {
-        const normalizedKey = key.replace(/^\uFEFF/, "").trim().toLowerCase();
-        next[normalizedKey] = value;
-      }
-      return next;
-    });
+    // Normalize headers, including common export names such as "Product Name"
+    // and "Selling Price", before validating the import.
+    const normalizedRecords = normalizeImportRecords(records);
 
     const requiredHeaders = ["name", "sku", "category", "price"];
     const firstRow = normalizedRecords[0];

@@ -537,21 +537,21 @@ export async function importProductsXlsx(companyId: number, buffer: Buffer): Pro
 
   for (const row of rows) {
     try {
-      const name = String(row.name || row["Product Name"] || "").trim();
-      const category = String(row.category || row["Category"] || "Uncategorized").trim();
+       const name = String(row.name || row["Name"] || row["Product Name"] || row["Product Title"] || "").trim();
+       const category = String(row.category || row["Category"] || row["Product Type"] || "Uncategorized").trim();
       if (!name) throw new Error("Missing product name");
-      let sku = String(row.sku || row["SKU"] || "").trim();
+       let sku = String(row.sku || row["SKU"] || row["Sku Id"] || row["Product Code"] || "").trim();
       if (!sku) sku = generateSku(name, category, companyId, Array.from(existingSkus));
       if (existingSkus.has(sku)) { stats.errors.push(`Duplicate SKU skipped: ${sku}`); stats.failed++; continue; }
       existingSkus.add(sku);
-      const price = parseFloat(row.price || row["Price"] || "0") || 0;
+       const price = parseFloat(row.price || row["Price"] || row["Selling Price"] || "0") || 0;
       const mrp = parseFloat(row.mrp || row["MRP"] || row["Mrp"] || "0") || 0;
-      const stockQuantity = parseInt(row.stockQuantity || row["Stock"] || row["Stock Quantity"] || "0", 10) || 0;
+       const stockQuantity = parseInt(row.stockQuantity || row["Stock"] || row["Stock Quantity"] || row["Quantity"] || "0", 10) || 0;
       await db.insert(productsTable).values({
         companyId,
         name,
         sku,
-        category,
+         category,
         subcategory: String(row.subcategory || row["Subcategory"] || "").trim() || undefined,
         brand: String(row.brand || row["Brand"] || "").trim() || undefined,
         description: String(row.description || row["Description"] || "").trim() || undefined,
