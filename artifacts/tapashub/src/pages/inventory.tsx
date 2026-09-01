@@ -159,7 +159,11 @@ export default function Inventory() {
       })
       const body = await response.json().catch(() => null)
       if (!response.ok) {
-        throw new Error(body?.error || `Could not load products (${response.status})`)
+        const requestError = new Error(body?.error || `Could not load products (${response.status})`) as Error & {
+          status?: number
+        }
+        requestError.status = response.status
+        throw requestError
       }
       if (!body || !Array.isArray(body.items) || typeof body.total !== "number") {
         throw new Error("The products service returned an invalid response")
@@ -167,7 +171,14 @@ export default function Inventory() {
       return body as { items: any[]; total: number; page: number; limit: number }
     },
     staleTime: 0,
-    retry: 1,
+    // The static frontend can become available before the API has completed
+    // its production startup migrations. Keep retrying transient gateway/server
+    // failures through that warm-up window instead of leaving a false error.
+    retry: (failureCount, requestError) => {
+      const status = (requestError as Error & { status?: number }).status
+      return (status == null || status >= 500) && failureCount < 8
+    },
+    retryDelay: 3_000,
     refetchOnMount: "always",
     refetchOnWindowFocus: true,
   })

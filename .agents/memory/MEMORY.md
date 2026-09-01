@@ -55,3 +55,4 @@
 - [Clients & Vendors row-level access](tbos-clients-vendors.md) — cvScope mirrors companyScope but vendor_user defaults deny; apply to lists, stats AND mutations; Express 5 has no regex route params.
 - [TBOS fake DB query-builder methods](tbos-fake-db-methods.md) — copy the full QB chain (returning/for/onConflictDoNothing) when reusing the fake DB, or insert paths fail with 'not a function'.
 - [XLSX image-link cell limits](xlsx-image-cell-limits.md) — never write base64/data URLs into workbook cells; Excel cells cap text at 32,767 characters, so export linkable paths only.
+- [TBOS deployment warm-up](tbos-deployment-warmup.md) — static frontend may serve ~25s before API startup migrations finish; critical reads must retry transient 5xx responses.
