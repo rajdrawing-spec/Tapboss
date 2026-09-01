@@ -220,7 +220,7 @@ describe("company scoping — module list views", () => {
     fireEvent.click(screen.getByTestId("pick-a"))
     await screen.findByText("Acme Widget")
 
-    fireEvent.click(screen.getByTestId("checkbox-product-11"))
+    fireEvent.click(await screen.findByTestId("checkbox-product-11"))
     expect(screen.getByTestId("status-selection")).toHaveTextContent("1 selected")
     fireEvent.click(screen.getByTestId("button-export-xlsx"))
 

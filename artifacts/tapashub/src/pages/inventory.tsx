@@ -1,5 +1,6 @@
 import * as React from "react"
-import { useListProducts, getListProductsQueryKey, useListCompanies } from "@workspace/api-client-react"
+import { useListCompanies } from "@workspace/api-client-react"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -116,6 +117,7 @@ export function productImagePreview(path: string): string {
 export default function Inventory() {
   const { activeCompany } = useCompany()
   const { toast } = useToast()
+  const queryClient = useQueryClient()
   const [uploadingProductImage, setUploadingProductImage] = React.useState(false)
   const [search, setSearch] = React.useState("")
   const [page, setPage] = React.useState(1)
@@ -127,6 +129,7 @@ export default function Inventory() {
   const [deleting, setDeleting] = React.useState<number | null>(null)
   const [importing, setImporting] = React.useState(false)
   const [importFile, setImportFile] = React.useState<File | null>(null)
+  const [importCompanyId, setImportCompanyId] = React.useState("")
   const [importingJob, setImportingJob] = React.useState(false)
   const [generatingSku, setGeneratingSku] = React.useState(false)
   const [autoFill, setAutoFill] = React.useState<AutoFillData | null>(null)
@@ -143,19 +146,30 @@ export default function Inventory() {
 
   const { data: companies } = useListCompanies({ query: { enabled: true, queryKey: ["/api/companies"] } })
 
-  const params: Record<string, string | number> = { page, limit: 20 }
-  if (activeCompany) params.companyId = activeCompany.id
-  if (search) params.search = search
-
-  const { data, isLoading, refetch } = useListProducts(params, {
-    query: {
-      enabled: true,
-      queryKey: getListProductsQueryKey(params),
-      staleTime: 0,
-      refetchOnMount: "always",
-      refetchOnWindowFocus: true,
+  const { data, isLoading, isError, error, refetch } = useQuery({
+    queryKey: ["/api/products", activeCompany?.id ?? null, page, search],
+    queryFn: async () => {
+      const params = new URLSearchParams({ page: String(page), limit: "20" })
+      if (activeCompany) params.set("companyId", String(activeCompany.id))
+      if (search) params.set("search", search)
+      const response = await fetch(`/api/products?${params.toString()}`, {
+        credentials: "include",
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+      })
+      const body = await response.json().catch(() => null)
+      if (!response.ok) {
+        throw new Error(body?.error || `Could not load products (${response.status})`)
+      }
+      if (!body || !Array.isArray(body.items) || typeof body.total !== "number") {
+        throw new Error("The products service returned an invalid response")
+      }
+      return body as { items: any[]; total: number; page: number; limit: number }
     },
-    request: { cache: "no-store" },
+    staleTime: 0,
+    retry: 1,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
   })
 
   React.useEffect(() => {
@@ -172,6 +186,12 @@ export default function Inventory() {
     setQuickImages([])
     setQuickCompanyId(activeCompany ? String(activeCompany.id) : "")
     setQuickOpen(true)
+  }
+
+  function openImport() {
+    setImportFile(null)
+    setImportCompanyId(activeCompany ? String(activeCompany.id) : "")
+    setImporting(true)
   }
 
   async function uploadCatalogImage(file: File, companyId: number): Promise<string | null> {
@@ -573,14 +593,15 @@ export default function Inventory() {
   }
 
   async function importCsv(file: File) {
-    if (!activeCompany) { toast({ title: "Select a company" }); return }
+    const companyId = Number(importCompanyId)
+    if (!companyId) { toast({ title: "Select a company", variant: "destructive" }); return }
     setImportingJob(true)
     try {
       const csv = await file.text()
       if (!csv.trim()) throw new Error("CSV file is empty")
       const res = await fetch(`${API_BASE}/api/ai-products/import-csv`, {
         method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ companyId: activeCompany.id, csv }),
+        body: JSON.stringify({ companyId, csv }),
       })
       if (!res.ok) {
         const body = await res.json().catch(() => ({ error: "Import failed" }))
@@ -595,7 +616,8 @@ export default function Inventory() {
         description: `${stats.success} added, ${stats.failed} failed.${details}`,
         variant: stats.failed ? "destructive" : "default",
       })
-      refetch(); setImporting(false)
+      await queryClient.invalidateQueries({ queryKey: ["/api/products"] })
+      setImporting(false)
     } catch (e: any) {
       toast({ title: "Error", description: e?.message || "Import failed", variant: "destructive" })
     } finally { setImportingJob(false) }
@@ -641,14 +663,15 @@ export default function Inventory() {
   }
 
   async function importXlsx(file: File) {
-    if (!activeCompany) { toast({ title: "Select a company" }); return }
+    const companyId = Number(importCompanyId)
+    if (!companyId) { toast({ title: "Select a company", variant: "destructive" }); return }
     setImportingJob(true)
     try {
       const buffer = await file.arrayBuffer()
       const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)))
       const res = await fetch(`${API_BASE}/api/ai-products/import-xlsx`, {
         method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ companyId: activeCompany.id, base64 }),
+        body: JSON.stringify({ companyId, base64 }),
       })
       if (!res.ok) {
         const body = await res.json().catch(() => ({ error: "Import failed" }))
@@ -663,7 +686,8 @@ export default function Inventory() {
         description: `${stats.success} added, ${stats.failed} failed.${details}`,
         variant: stats.failed ? "destructive" : "default",
       })
-      refetch(); setImporting(false)
+      await queryClient.invalidateQueries({ queryKey: ["/api/products"] })
+      setImporting(false)
     } catch (e: any) {
       toast({ title: "Error", description: e?.message || "Excel import failed", variant: "destructive" })
     } finally { setImportingJob(false) }
@@ -721,10 +745,13 @@ export default function Inventory() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Products & Inventory</h1>
-          <p className="text-muted-foreground mt-0.5 text-sm">{activeCompany ? `${activeCompany.name} · ` : "All companies · "}{data?.total ?? 0} products</p>
+          <p className="text-muted-foreground mt-0.5 text-sm">
+            {activeCompany ? `${activeCompany.name} · ` : "All companies · "}
+            {isLoading ? "Loading products…" : isError ? "Unable to load products" : `${data?.total ?? 0} products`}
+          </p>
         </div>
         <div className="flex gap-2 flex-wrap justify-end">
-          <Button variant="outline" onClick={() => setImporting(true)} className="gap-2"><Upload className="w-4 h-4" />Import CSV</Button>
+          <Button variant="outline" onClick={openImport} className="gap-2"><Upload className="w-4 h-4" />Import CSV</Button>
           <Button variant="outline" onClick={exportCsv} className="gap-2"><Download className="w-4 h-4" />Export CSV</Button>
           <Button variant="outline" onClick={exportXlsx} className="gap-2" data-testid="button-export-xlsx"><FileSpreadsheet className="w-4 h-4" />Export Excel{selectedIds.size ? ` (${selectedIds.size})` : ""}</Button>
           <Button onClick={openQuickAdd} className="gap-2 bg-purple-600 hover:bg-purple-700 text-white" data-testid="button-ai-drafts"><Sparkles className="w-4 h-4" />Create AI drafts</Button>
@@ -824,7 +851,16 @@ export default function Inventory() {
               <TableBody>
                 {isLoading ? Array.from({ length: 8 }).map((_, i) => (
                   <TableRow key={i}><TableCell colSpan={9}><Skeleton className="h-8 w-full" /></TableCell></TableRow>
-                )) : data?.items?.length === 0 ? (
+                )) : isError ? (
+                  <TableRow><TableCell colSpan={9} className="h-40 text-center">
+                    <AlertTriangle className="mx-auto h-8 w-8 text-destructive mb-2" />
+                    <p className="font-medium">Products could not be loaded</p>
+                    <p className="text-sm text-muted-foreground mt-1">{error instanceof Error ? error.message : "Please try again."}</p>
+                    <Button variant="outline" size="sm" className="mt-3 gap-2" onClick={() => refetch()}>
+                      <RefreshCw className="h-4 w-4" />Retry
+                    </Button>
+                  </TableCell></TableRow>
+                ) : data?.items?.length === 0 ? (
                   <TableRow><TableCell colSpan={9} className="h-32 text-center">
                     <PackageSearch className="mx-auto h-8 w-8 opacity-20 mb-2" />
                     <p className="text-muted-foreground">No products found</p>
@@ -1056,6 +1092,17 @@ export default function Inventory() {
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Import Products</DialogTitle></DialogHeader>
           <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <Label>Import into company</Label>
+              <Select value={importCompanyId} onValueChange={setImportCompanyId}>
+                <SelectTrigger><SelectValue placeholder="Select company" /></SelectTrigger>
+                <SelectContent>
+                  {(Array.isArray(companies) ? companies : []).map((company: any) => (
+                    <SelectItem key={company.id} value={String(company.id)}>{company.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <Input ref={fileInputRef} type="file" accept=".csv,.xlsx" onChange={e => setImportFile(e.target.files?.[0] || null)} />
             <p className="text-xs text-muted-foreground">Upload CSV or Excel. Columns: name, sku, brand, category, subcategory, description, shortDescription, price, mrp, costPrice, gst, stockQuantity, reorderLevel, weight, dimensions, hsn, warehouseLocation, status</p>
           </div>
@@ -1063,7 +1110,7 @@ export default function Inventory() {
             <Button variant="outline" onClick={() => setImporting(false)}>Cancel</Button>
             <Button
               onClick={() => { if (importFile) { importFile.name.endsWith(".xlsx") ? importXlsx(importFile) : importCsv(importFile); } }}
-              disabled={importingJob || !importFile}
+              disabled={importingJob || !importFile || !importCompanyId}
             >{importingJob ? "Importing…" : "Import"}</Button>
           </DialogFooter>
         </DialogContent>
