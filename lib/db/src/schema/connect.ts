@@ -1,9 +1,10 @@
-import { pgTable, serial, integer, text, timestamp, boolean, jsonb, date, index } from "drizzle-orm/pg-core";
+import { serial, integer, text, timestamp, boolean, jsonb, date, index } from "drizzle-orm/pg-core";
+import { tbosSchema } from "./_pg-schema";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
 // ── chat_polls: quick polls inside channels ───────────────────────────────────
-export const chatPollsTable = pgTable(
+export const chatPollsTable = tbosSchema.table(
   "chat_polls",
   {
     id: serial("id").primaryKey(),
@@ -25,7 +26,7 @@ export type ChatPoll = typeof chatPollsTable.$inferSelect;
 export type NewChatPoll = typeof chatPollsTable.$inferInsert;
 
 // ── user_status: presence, DND, custom status ─────────────────────────────────
-export const userStatusTable = pgTable(
+export const userStatusTable = tbosSchema.table(
   "user_status",
   {
     id: serial("id").primaryKey(),
@@ -46,7 +47,7 @@ export type UserStatus = typeof userStatusTable.$inferSelect;
 export type NewUserStatus = typeof userStatusTable.$inferInsert;
 
 // ── meeting_templates: reusable meeting templates per company ──────────────────
-export const meetingTemplatesTable = pgTable(
+export const meetingTemplatesTable = tbosSchema.table(
   "meeting_templates",
   {
     id: serial("id").primaryKey(),
@@ -72,7 +73,7 @@ export type MeetingTemplate = typeof meetingTemplatesTable.$inferSelect;
 export type NewMeetingTemplate = typeof meetingTemplatesTable.$inferInsert;
 
 // ── meeting_notes: notes tied to a meeting ─────────────────────────────────────
-export const meetingNotesTable = pgTable(
+export const meetingNotesTable = tbosSchema.table(
   "meeting_notes",
   {
     id: serial("id").primaryKey(),
@@ -91,7 +92,7 @@ export type MeetingNote = typeof meetingNotesTable.$inferSelect;
 export type NewMeetingNote = typeof meetingNotesTable.$inferInsert;
 
 // ── planner_events: daily/weekly/monthly planner events ───────────────────────
-export const plannerEventsTable = pgTable(
+export const plannerEventsTable = tbosSchema.table(
   "planner_events",
   {
     id: serial("id").primaryKey(),
@@ -117,7 +118,7 @@ export type PlannerEvent = typeof plannerEventsTable.$inferSelect;
 export type NewPlannerEvent = typeof plannerEventsTable.$inferInsert;
 
 // ── workload_snapshots: AI workload analysis cache ────────────────────────────
-export const workloadSnapshotsTable = pgTable(
+export const workloadSnapshotsTable = tbosSchema.table(
   "workload_snapshots",
   {
     id: serial("id").primaryKey(),

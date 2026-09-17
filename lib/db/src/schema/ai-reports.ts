@@ -1,7 +1,8 @@
-import { pgTable, serial, integer, text, timestamp, jsonb, boolean } from "drizzle-orm/pg-core";
+import { serial, integer, text, timestamp, jsonb, boolean } from "drizzle-orm/pg-core";
+import { tbosSchema } from "./_pg-schema";
 
 // ── ai_report_schedules: per-company automated report configuration ────────────
-export const aiReportSchedulesTable = pgTable("ai_report_schedules", {
+export const aiReportSchedulesTable = tbosSchema.table("ai_report_schedules", {
   id:              serial("id").primaryKey(),
   companyId:       integer("company_id"),          // null = portfolio-wide report
   type:            text("type").notNull(),          // weekly | monthly | quarterly
@@ -14,7 +15,7 @@ export const aiReportSchedulesTable = pgTable("ai_report_schedules", {
 });
 
 // ── ai_report_history: log of all generated reports ──────────────────────────
-export const aiReportHistoryTable = pgTable("ai_report_history", {
+export const aiReportHistoryTable = tbosSchema.table("ai_report_history", {
   id:             serial("id").primaryKey(),
   scheduleId:     integer("schedule_id"),           // null = manually triggered
   companyId:      integer("company_id"),            // null = portfolio-wide

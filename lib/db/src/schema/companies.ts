@@ -1,8 +1,9 @@
-import { pgTable, serial, text, real, integer, boolean, timestamp, jsonb } from "drizzle-orm/pg-core";
+import { serial, text, real, integer, boolean, timestamp, jsonb } from "drizzle-orm/pg-core";
+import { tbosSchema } from "./_pg-schema";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
-export const companiesTable = pgTable("companies", {
+export const companiesTable = tbosSchema.table("companies", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   slug: text("slug").notNull().unique(),

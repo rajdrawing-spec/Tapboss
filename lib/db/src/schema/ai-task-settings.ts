@@ -1,10 +1,11 @@
-import { pgTable, serial, integer, text, timestamp, jsonb, boolean, date, primaryKey } from "drizzle-orm/pg-core";
+import { serial, integer, text, timestamp, jsonb, boolean, date, primaryKey } from "drizzle-orm/pg-core";
+import { tbosSchema } from "./_pg-schema";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
 // ── ai_task_company_settings: AI Tasks scheduling/workday context per company ─────
 // Keeps the AI Tasks module self-contained; does not modify the core companies table.
-export const aiTaskCompanySettingsTable = pgTable("ai_task_company_settings", {
+export const aiTaskCompanySettingsTable = tbosSchema.table("ai_task_company_settings", {
   companyId: integer("company_id").notNull().primaryKey(),
   timezone: text("timezone").notNull().default("UTC"),
   workWeek: jsonb("work_week").$type<number[]>().notNull().default([1, 2, 3, 4, 5]), // 0=Sun..6=Sat
@@ -18,7 +19,7 @@ export type AiTaskCompanySettings = typeof aiTaskCompanySettingsTable.$inferSele
 export type NewAiTaskCompanySettings = typeof aiTaskCompanySettingsTable.$inferInsert;
 
 // ── ai_task_company_holidays: company-specific non-working days ────────────────
-export const aiTaskCompanyHolidaysTable = pgTable("ai_task_company_holidays", {
+export const aiTaskCompanyHolidaysTable = tbosSchema.table("ai_task_company_holidays", {
   id: serial("id").primaryKey(),
   companyId: integer("company_id").notNull(),
   date: date("date", { mode: "string" }).notNull(),
@@ -32,7 +33,7 @@ export type NewAiTaskCompanyHoliday = typeof aiTaskCompanyHolidaysTable.$inferIn
 
 // ── ai_task_projects: projects owned by a company with a priority ───────────────
 // Used by the AI task generator to prioritize tasks per employee project assignment.
-export const aiTaskProjectsTable = pgTable("ai_task_projects", {
+export const aiTaskProjectsTable = tbosSchema.table("ai_task_projects", {
   id: serial("id").primaryKey(),
   companyId: integer("company_id").notNull(),
   name: text("name").notNull(),
@@ -48,7 +49,7 @@ export type NewAiTaskProject = typeof aiTaskProjectsTable.$inferInsert;
 // ── ai_prompts: versioned prompt templates ─────────────────────────────────────
 // Admins can edit prompt templates without changing code. The active prompt for a
 // given name is used by the generator; historical versions are retained for audit.
-export const aiPromptsTable = pgTable("ai_prompts", {
+export const aiPromptsTable = tbosSchema.table("ai_prompts", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(), // e.g. "task_generation"
   version: text("version").notNull(),
@@ -63,7 +64,7 @@ export type AiPrompt = typeof aiPromptsTable.$inferSelect;
 export type NewAiPrompt = typeof aiPromptsTable.$inferInsert;
 
 // ── scheduler_locks: prevents concurrent scheduler execution per company ────────
-export const schedulerLocksTable = pgTable("scheduler_locks", {
+export const schedulerLocksTable = tbosSchema.table("scheduler_locks", {
   companyId: integer("company_id").notNull().primaryKey(),
   lockedAt: timestamp("locked_at").notNull().defaultNow(),
   expiresAt: timestamp("expires_at").notNull(),

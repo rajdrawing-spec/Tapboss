@@ -30,6 +30,15 @@ export const pool = new Pool({
   // Supabase free tier allows ~60 direct connections. Keep pool small for
   // autoscale deployments where multiple instances may be running.
   max: isSupabase ? 5 : 10,
+  // All TBOS tables live in the "tbos" Postgres schema (see schema/_pg-schema.ts)
+  // rather than "public" — this project's "public" schema belongs to an
+  // unrelated site and has same-named tables (orders, products, messages) with
+  // incompatible columns. Drizzle's own queries are already schema-qualified
+  // via that table object, but raw `sql` fragments elsewhere in this codebase
+  // use bare table names, so every connection must resolve them against "tbos"
+  // only — never falling back to "public" — or a typo could silently read/write
+  // the wrong business's data instead of failing loudly.
+  options: "-c search_path=tbos",
 });
 
 export const db = drizzle(pool, { schema });

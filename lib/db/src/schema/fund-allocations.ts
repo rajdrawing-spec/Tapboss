@@ -1,4 +1,5 @@
-import { pgTable, serial, text, real, integer, timestamp } from "drizzle-orm/pg-core";
+import { serial, text, real, integer, timestamp } from "drizzle-orm/pg-core";
+import { tbosSchema } from "./_pg-schema";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -6,7 +7,7 @@ import { z } from "zod/v4";
 // subsidiary. Executing an allocation records a real pair of finance
 // transactions (transfer out of the parent, capital injection into the
 // subsidiary) and can optionally adjust the parent's recorded stake.
-export const fundAllocationsTable = pgTable("fund_allocations", {
+export const fundAllocationsTable = tbosSchema.table("fund_allocations", {
   id: serial("id").primaryKey(),
   fromCompanyId: integer("from_company_id").notNull(), // source (parent)
   toCompanyId: integer("to_company_id").notNull(),     // recipient (subsidiary)

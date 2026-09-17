@@ -1,9 +1,10 @@
-import { pgTable, serial, integer, text, boolean, timestamp, index } from "drizzle-orm/pg-core";
+import { serial, integer, text, boolean, timestamp, index } from "drizzle-orm/pg-core";
+import { tbosSchema } from "./_pg-schema";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
 // ── Business numbers (Exotel virtual numbers, one per department) ────────────
-export const businessNumbersTable = pgTable(
+export const businessNumbersTable = tbosSchema.table(
   "business_numbers",
   {
     id: serial("id").primaryKey(),
@@ -21,7 +22,7 @@ export const businessNumbersTable = pgTable(
 );
 
 // ── Call center contacts (company phonebook) ────────────────────────────────
-export const callContactsTable = pgTable(
+export const callContactsTable = tbosSchema.table(
   "call_contacts",
   {
     id: serial("id").primaryKey(),
@@ -38,7 +39,7 @@ export const callContactsTable = pgTable(
 );
 
 // ── Call logs ────────────────────────────────────────────────────────────────
-export const callLogsTable = pgTable(
+export const callLogsTable = tbosSchema.table(
   "call_logs",
   {
     id: serial("id").primaryKey(),
@@ -65,7 +66,7 @@ export const callLogsTable = pgTable(
 );
 
 // ── Per-user permissions on business numbers ────────────────────────────────
-export const callNumberPermissionsTable = pgTable(
+export const callNumberPermissionsTable = tbosSchema.table(
   "call_number_permissions",
   {
     id: serial("id").primaryKey(),
@@ -79,7 +80,7 @@ export const callNumberPermissionsTable = pgTable(
 );
 
 // ── Per-company call-center settings (Exotel credentials + toggles) ──────────
-export const callCenterSettingsTable = pgTable("call_center_settings", {
+export const callCenterSettingsTable = tbosSchema.table("call_center_settings", {
   id: serial("id").primaryKey(),
   companyId: integer("company_id").notNull().unique(),
   accountSid: text("account_sid"),

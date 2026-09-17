@@ -1,4 +1,5 @@
-import { pgTable, serial, integer, text, timestamp, unique } from "drizzle-orm/pg-core";
+import { serial, integer, text, timestamp, unique } from "drizzle-orm/pg-core";
+import { tbosSchema } from "./_pg-schema";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -7,7 +8,7 @@ import { z } from "zod/v4";
  * Created with decision="pending" when the approval is created, updated when
  * the voter takes action.
  */
-export const approvalVotesTable = pgTable(
+export const approvalVotesTable = tbosSchema.table(
   "approval_votes",
   {
     id: serial("id").primaryKey(),

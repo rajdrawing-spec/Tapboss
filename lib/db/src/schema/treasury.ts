@@ -1,4 +1,5 @@
-import { pgTable, serial, text, real, integer, boolean, timestamp } from "drizzle-orm/pg-core";
+import { serial, text, real, integer, boolean, timestamp } from "drizzle-orm/pg-core";
+import { tbosSchema } from "./_pg-schema";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -12,7 +13,7 @@ import { z } from "zod/v4";
  * Records are never permanently deleted.  To correct an error, reverse the
  * entry (is_reversed = true) and create a new corrected one.
  */
-export const treasuryEntriesTable = pgTable("treasury_entries", {
+export const treasuryEntriesTable = tbosSchema.table("treasury_entries", {
   id: serial("id").primaryKey(),
 
   // Funding classification

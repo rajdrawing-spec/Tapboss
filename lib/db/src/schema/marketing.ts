@@ -1,9 +1,10 @@
-import { pgTable, serial, text, integer, real, timestamp, boolean } from "drizzle-orm/pg-core";
+import { serial, text, integer, real, timestamp, boolean } from "drizzle-orm/pg-core";
+import { tbosSchema } from "./_pg-schema";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
 /** Creative Library — ad creatives / assets, optionally linked to a campaign. */
-export const campaignCreativesTable = pgTable("campaign_creatives", {
+export const campaignCreativesTable = tbosSchema.table("campaign_creatives", {
   id: serial("id").primaryKey(),
   companyId: integer("company_id").notNull(),
   projectId: integer("project_id"), // nullable: marketing project (client portal tenancy)
@@ -21,7 +22,7 @@ export const campaignCreativesTable = pgTable("campaign_creatives", {
 });
 
 /** Lead Tracking — marketing leads captured from campaigns/channels. */
-export const campaignLeadsTable = pgTable("campaign_leads", {
+export const campaignLeadsTable = tbosSchema.table("campaign_leads", {
   id: serial("id").primaryKey(),
   companyId: integer("company_id").notNull(),
   projectId: integer("project_id"), // nullable: marketing project (client portal tenancy)

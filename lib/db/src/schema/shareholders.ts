@@ -1,11 +1,12 @@
-import { pgTable, serial, text, real, integer, timestamp } from "drizzle-orm/pg-core";
+import { serial, text, real, integer, timestamp } from "drizzle-orm/pg-core";
+import { tbosSchema } from "./_pg-schema";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
 // A shareholder holds equity in a single company (parent or subsidiary).
 // Ownership percentage is stored but always derived from the company's total
 // issued shares — it is recomputed whenever any holding for that company changes.
-export const shareholdersTable = pgTable("shareholders", {
+export const shareholdersTable = tbosSchema.table("shareholders", {
   id: serial("id").primaryKey(),
   companyId: integer("company_id").notNull(),
   name: text("name").notNull(),
@@ -31,7 +32,7 @@ export const shareholdersTable = pgTable("shareholders", {
 
 // Investment history: every share event for a shareholder (money in/out, grants,
 // dividends). Positive `shares` add to a holding, negative remove.
-export const shareTransactionsTable = pgTable("share_transactions", {
+export const shareTransactionsTable = tbosSchema.table("share_transactions", {
   id: serial("id").primaryKey(),
   shareholderId: integer("shareholder_id").notNull(),
   companyId: integer("company_id").notNull(),

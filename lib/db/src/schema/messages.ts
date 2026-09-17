@@ -1,10 +1,11 @@
-import { integer, pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
+import { integer, serial, text, timestamp } from "drizzle-orm/pg-core";
+import { tbosSchema } from "./_pg-schema";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
 import { conversations } from "./conversations";
 
-export const messages = pgTable("messages", {
+export const messages = tbosSchema.table("messages", {
   id: serial("id").primaryKey(),
   conversationId: integer("conversation_id")
     .notNull()

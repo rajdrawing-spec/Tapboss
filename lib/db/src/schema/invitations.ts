@@ -1,9 +1,10 @@
-import { pgTable, serial, text, json, integer, timestamp, uniqueIndex, index } from "drizzle-orm/pg-core";
+import { serial, text, json, integer, timestamp, uniqueIndex, index } from "drizzle-orm/pg-core";
+import { tbosSchema } from "./_pg-schema";
 import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
-export const invitationsTable = pgTable("invitations", {
+export const invitationsTable = tbosSchema.table("invitations", {
   id: serial("id").primaryKey(),
   email: text("email").notNull(),
   name: text("name"),

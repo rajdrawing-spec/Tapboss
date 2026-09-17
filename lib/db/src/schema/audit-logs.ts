@@ -1,8 +1,9 @@
-import { pgTable, serial, text, integer, json, timestamp, index } from "drizzle-orm/pg-core";
+import { serial, text, integer, json, timestamp, index } from "drizzle-orm/pg-core";
+import { tbosSchema } from "./_pg-schema";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
-export const auditLogsTable = pgTable("audit_logs", {
+export const auditLogsTable = tbosSchema.table("audit_logs", {
   id: serial("id").primaryKey(),
   userId: integer("user_id"), // actor (null for system)
   userEmail: text("user_email"),

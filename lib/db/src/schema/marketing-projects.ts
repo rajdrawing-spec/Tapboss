@@ -1,4 +1,5 @@
-import { pgTable, serial, text, integer, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { serial, text, integer, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { tbosSchema } from "./_pg-schema";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -7,7 +8,7 @@ import { z } from "zod/v4";
  * Each project belongs to one company and carries its own brand identity
  * shown to client users inside the portal.
  */
-export const marketingProjectsTable = pgTable("marketing_projects", {
+export const marketingProjectsTable = tbosSchema.table("marketing_projects", {
   id: serial("id").primaryKey(),
   companyId: integer("company_id").notNull(),
   name: text("name").notNull(),
@@ -25,7 +26,7 @@ export const marketingProjectsTable = pgTable("marketing_projects", {
 ]);
 
 /** Project membership: internal team members and client users assigned to a project. */
-export const marketingProjectMembersTable = pgTable("marketing_project_members", {
+export const marketingProjectMembersTable = tbosSchema.table("marketing_project_members", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").notNull(),
   userId: integer("user_id").notNull(),

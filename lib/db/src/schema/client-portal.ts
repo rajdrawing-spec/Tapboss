@@ -1,4 +1,5 @@
-import { pgTable, serial, text, integer, boolean, json, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { serial, text, integer, boolean, json, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { tbosSchema } from "./_pg-schema";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -34,7 +35,7 @@ export const DEFAULT_CLIENT_VISIBILITY: ClientVisibilitySettings = {
   reports: true, ai: true, aiRequiresReview: false,
 };
 
-export const clientVisibilitySettingsTable = pgTable("client_visibility_settings", {
+export const clientVisibilitySettingsTable = tbosSchema.table("client_visibility_settings", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").notNull(),
   settings: json("settings").$type<ClientVisibilitySettings>().notNull(),
@@ -45,7 +46,7 @@ export const clientVisibilitySettingsTable = pgTable("client_visibility_settings
 ]);
 
 /** AI marketing plans generated for a client project. */
-export const clientAiPlansTable = pgTable("client_ai_plans", {
+export const clientAiPlansTable = tbosSchema.table("client_ai_plans", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").notNull(),
   // pending_review → internal team must approve; published → client-visible; archived → hidden
@@ -65,7 +66,7 @@ export const clientAiPlansTable = pgTable("client_ai_plans", {
 ]);
 
 /** Client portal access events (viewed dashboard, downloaded report, generated AI plan, permission change). */
-export const clientAuditLogsTable = pgTable("client_audit_logs", {
+export const clientAuditLogsTable = tbosSchema.table("client_audit_logs", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").notNull(),
   userId: integer("user_id"),

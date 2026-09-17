@@ -1,8 +1,9 @@
-import { pgTable, serial, text, real, integer, timestamp, index, boolean, jsonb } from "drizzle-orm/pg-core";
+import { serial, text, real, integer, timestamp, index, boolean, jsonb } from "drizzle-orm/pg-core";
+import { tbosSchema } from "./_pg-schema";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
-export const productsTable = pgTable("products", {
+export const productsTable = tbosSchema.table("products", {
   id: serial("id").primaryKey(),
   companyId: integer("company_id").notNull(),
   name: text("name").notNull(),
@@ -38,7 +39,7 @@ export const insertProductSchema = createInsertSchema(productsTable).omit({ id: 
 export type InsertProduct = z.infer<typeof insertProductSchema>;
 export type Product = typeof productsTable.$inferSelect;
 
-export const productVariantsTable = pgTable("product_variants", {
+export const productVariantsTable = tbosSchema.table("product_variants", {
   id: serial("id").primaryKey(),
   productId: integer("product_id").notNull(),
   companyId: integer("company_id").notNull(),
@@ -56,7 +57,7 @@ export const productVariantsTable = pgTable("product_variants", {
   index("product_variants_sku_idx").on(t.sku),
 ]);
 
-export const productImagesTable = pgTable("product_images", {
+export const productImagesTable = tbosSchema.table("product_images", {
   id: serial("id").primaryKey(),
   productId: integer("product_id").notNull(),
   companyId: integer("company_id").notNull(),
@@ -70,7 +71,7 @@ export const productImagesTable = pgTable("product_images", {
   index("product_images_company_id_idx").on(t.companyId),
 ]);
 
-export const productAiMetadataTable = pgTable("product_ai_metadata", {
+export const productAiMetadataTable = tbosSchema.table("product_ai_metadata", {
   id: serial("id").primaryKey(),
   productId: integer("product_id").notNull().unique(),
   companyId: integer("company_id").notNull(),
@@ -88,7 +89,7 @@ export const productAiMetadataTable = pgTable("product_ai_metadata", {
   index("product_ai_metadata_company_id_idx").on(t.companyId),
 ]);
 
-export const productMarketplaceTemplatesTable = pgTable("product_marketplace_templates", {
+export const productMarketplaceTemplatesTable = tbosSchema.table("product_marketplace_templates", {
   id: serial("id").primaryKey(),
   companyId: integer("company_id").notNull(),
   marketplace: text("marketplace").notNull(),
@@ -102,7 +103,7 @@ export const productMarketplaceTemplatesTable = pgTable("product_marketplace_tem
   index("product_marketplace_templates_marketplace_idx").on(t.marketplace),
 ]);
 
-export const productImportJobsTable = pgTable("product_import_jobs", {
+export const productImportJobsTable = tbosSchema.table("product_import_jobs", {
   id: serial("id").primaryKey(),
   companyId: integer("company_id").notNull(),
   status: text("status").notNull().default("pending"),

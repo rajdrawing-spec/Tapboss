@@ -1,8 +1,9 @@
-import { pgTable, serial, text, boolean, json, timestamp } from "drizzle-orm/pg-core";
+import { serial, text, boolean, json, timestamp } from "drizzle-orm/pg-core";
+import { tbosSchema } from "./_pg-schema";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
-export const rolesTable = pgTable("roles", {
+export const rolesTable = tbosSchema.table("roles", {
   id: serial("id").primaryKey(),
   key: text("key").notNull().unique(), // slug used on users.role
   name: text("name").notNull(),

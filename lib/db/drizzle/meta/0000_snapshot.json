@@ -1,12 +1,12 @@
 {
-  "id": "02f96f93-b9ac-4c96-880d-16d803a3ffc4",
+  "id": "3b1c63cd-9b1c-4124-900e-66e9427fac17",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
-    "public.companies": {
+    "tbos.companies": {
       "name": "companies",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -204,9 +204,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.users": {
+    "tbos.users": {
       "name": "users",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -322,9 +322,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.roles": {
+    "tbos.roles": {
       "name": "roles",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -395,9 +395,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.invitations": {
+    "tbos.invitations": {
       "name": "invitations",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -482,7 +482,7 @@
             }
           ],
           "isUnique": true,
-          "where": "\"invitations\".\"status\" = 'pending'",
+          "where": "\"tbos\".\"invitations\".\"status\" = 'pending'",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -525,9 +525,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.audit_logs": {
+    "tbos.audit_logs": {
       "name": "audit_logs",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -639,9 +639,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.orders": {
+    "tbos.orders": {
       "name": "orders",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -814,9 +814,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.product_ai_metadata": {
+    "tbos.product_ai_metadata": {
       "name": "product_ai_metadata",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -945,9 +945,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.product_images": {
+    "tbos.product_images": {
       "name": "product_images",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -1040,9 +1040,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.product_import_jobs": {
+    "tbos.product_import_jobs": {
       "name": "product_import_jobs",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -1136,9 +1136,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.product_marketplace_templates": {
+    "tbos.product_marketplace_templates": {
       "name": "product_marketplace_templates",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -1231,9 +1231,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.product_variants": {
+    "tbos.product_variants": {
       "name": "product_variants",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -1361,9 +1361,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.products": {
+    "tbos.products": {
       "name": "products",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -1579,9 +1579,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.transactions": {
+    "tbos.transactions": {
       "name": "transactions",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -1727,9 +1727,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.fund_allocations": {
+    "tbos.fund_allocations": {
       "name": "fund_allocations",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -1839,9 +1839,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.share_transactions": {
+    "tbos.share_transactions": {
       "name": "share_transactions",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -1916,9 +1916,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.shareholders": {
+    "tbos.shareholders": {
       "name": "shareholders",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -2040,9 +2040,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.employees": {
+    "tbos.employees": {
       "name": "employees",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -2177,9 +2177,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.customers": {
+    "tbos.customers": {
       "name": "customers",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -2310,9 +2310,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.leads": {
+    "tbos.leads": {
       "name": "leads",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -2443,9 +2443,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.vendors": {
+    "tbos.vendors": {
       "name": "vendors",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -2544,9 +2544,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.notifications": {
+    "tbos.notifications": {
       "name": "notifications",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -2620,9 +2620,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.approvals": {
+    "tbos.approvals": {
       "name": "approvals",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -2729,9 +2729,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.approval_votes": {
+    "tbos.approval_votes": {
       "name": "approval_votes",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -2808,9 +2808,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.activity": {
+    "tbos.activity": {
       "name": "activity",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -2928,9 +2928,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.platforms": {
+    "tbos.platforms": {
       "name": "platforms",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -3011,9 +3011,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.integration_connections": {
+    "tbos.integration_connections": {
       "name": "integration_connections",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -3161,9 +3161,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.integration_error_logs": {
+    "tbos.integration_error_logs": {
       "name": "integration_error_logs",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -3224,9 +3224,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.integration_sync_history": {
+    "tbos.integration_sync_history": {
       "name": "integration_sync_history",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -3300,9 +3300,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.integration_credentials": {
+    "tbos.integration_credentials": {
       "name": "integration_credentials",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -3391,9 +3391,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.account_directory": {
+    "tbos.account_directory": {
       "name": "account_directory",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -3511,9 +3511,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.shipments": {
+    "tbos.shipments": {
       "name": "shipments",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -3637,9 +3637,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.documents": {
+    "tbos.documents": {
       "name": "documents",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -3731,9 +3731,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.campaigns": {
+    "tbos.campaigns": {
       "name": "campaigns",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -3871,9 +3871,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.campaign_creatives": {
+    "tbos.campaign_creatives": {
       "name": "campaign_creatives",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -3973,9 +3973,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.campaign_leads": {
+    "tbos.campaign_leads": {
       "name": "campaign_leads",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -4075,9 +4075,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.marketing_project_members": {
+    "tbos.marketing_project_members": {
       "name": "marketing_project_members",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -4120,9 +4120,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.marketing_projects": {
+    "tbos.marketing_projects": {
       "name": "marketing_projects",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -4206,9 +4206,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.client_ai_plans": {
+    "tbos.client_ai_plans": {
       "name": "client_ai_plans",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -4316,9 +4316,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.client_audit_logs": {
+    "tbos.client_audit_logs": {
       "name": "client_audit_logs",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -4403,9 +4403,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.client_visibility_settings": {
+    "tbos.client_visibility_settings": {
       "name": "client_visibility_settings",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -4463,9 +4463,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.treasury_entries": {
+    "tbos.treasury_entries": {
       "name": "treasury_entries",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -4607,9 +4607,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.ai_analyses": {
+    "tbos.ai_analyses": {
       "name": "ai_analyses",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -4707,9 +4707,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.ai_config": {
+    "tbos.ai_config": {
       "name": "ai_config",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -4759,9 +4759,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.ai_market_analyses": {
+    "tbos.ai_market_analyses": {
       "name": "ai_market_analyses",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -4817,9 +4817,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.ai_predictions": {
+    "tbos.ai_predictions": {
       "name": "ai_predictions",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -4862,9 +4862,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.ai_valuations": {
+    "tbos.ai_valuations": {
       "name": "ai_valuations",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -5021,9 +5021,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.ai_report_history": {
+    "tbos.ai_report_history": {
       "name": "ai_report_history",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -5120,9 +5120,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.ai_report_schedules": {
+    "tbos.ai_report_schedules": {
       "name": "ai_report_schedules",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -5191,9 +5191,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.generated_tasks": {
+    "tbos.generated_tasks": {
       "name": "generated_tasks",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -5312,9 +5312,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.task_generation_jobs": {
+    "tbos.task_generation_jobs": {
       "name": "task_generation_jobs",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -5448,9 +5448,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.task_templates": {
+    "tbos.task_templates": {
       "name": "task_templates",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -5540,9 +5540,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.ai_prompts": {
+    "tbos.ai_prompts": {
       "name": "ai_prompts",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -5605,9 +5605,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.ai_task_company_holidays": {
+    "tbos.ai_task_company_holidays": {
       "name": "ai_task_company_holidays",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -5656,9 +5656,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.ai_task_company_settings": {
+    "tbos.ai_task_company_settings": {
       "name": "ai_task_company_settings",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "company_id": {
           "name": "company_id",
@@ -5716,9 +5716,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.ai_task_projects": {
+    "tbos.ai_task_projects": {
       "name": "ai_task_projects",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -5775,9 +5775,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.scheduler_locks": {
+    "tbos.scheduler_locks": {
       "name": "scheduler_locks",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "company_id": {
           "name": "company_id",
@@ -5807,9 +5807,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.chat_channel_members": {
+    "tbos.chat_channel_members": {
       "name": "chat_channel_members",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -5880,9 +5880,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.chat_channels": {
+    "tbos.chat_channels": {
       "name": "chat_channels",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -6001,9 +6001,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.chat_message_reads": {
+    "tbos.chat_message_reads": {
       "name": "chat_message_reads",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -6061,9 +6061,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.chat_messages": {
+    "tbos.chat_messages": {
       "name": "chat_messages",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -6189,9 +6189,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.chat_polls": {
+    "tbos.chat_polls": {
       "name": "chat_polls",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -6277,9 +6277,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.meeting_notes": {
+    "tbos.meeting_notes": {
       "name": "meeting_notes",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -6344,9 +6344,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.meeting_templates": {
+    "tbos.meeting_templates": {
       "name": "meeting_templates",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -6458,9 +6458,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.planner_events": {
+    "tbos.planner_events": {
       "name": "planner_events",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -6587,9 +6587,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.user_status": {
+    "tbos.user_status": {
       "name": "user_status",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -6676,9 +6676,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.workload_snapshots": {
+    "tbos.workload_snapshots": {
       "name": "workload_snapshots",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -6748,9 +6748,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.ai_meeting_notes": {
+    "tbos.ai_meeting_notes": {
       "name": "ai_meeting_notes",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -6912,9 +6912,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.meeting_participants": {
+    "tbos.meeting_participants": {
       "name": "meeting_participants",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -6991,9 +6991,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.meeting_settings": {
+    "tbos.meeting_settings": {
       "name": "meeting_settings",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -7117,9 +7117,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.meetings": {
+    "tbos.meetings": {
       "name": "meetings",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -7324,9 +7324,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.business_numbers": {
+    "tbos.business_numbers": {
       "name": "business_numbers",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -7416,9 +7416,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.call_center_settings": {
+    "tbos.call_center_settings": {
       "name": "call_center_settings",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -7500,9 +7500,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.call_contacts": {
+    "tbos.call_contacts": {
       "name": "call_contacts",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -7586,9 +7586,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.call_logs": {
+    "tbos.call_logs": {
       "name": "call_logs",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -7728,9 +7728,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.call_number_permissions": {
+    "tbos.call_number_permissions": {
       "name": "call_number_permissions",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -7795,9 +7795,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.conversations": {
+    "tbos.conversations": {
       "name": "conversations",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -7833,9 +7833,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.messages": {
+    "tbos.messages": {
       "name": "messages",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -7875,6 +7875,7 @@
           "name": "messages_conversation_id_conversations_id_fk",
           "tableFrom": "messages",
           "tableTo": "conversations",
+          "schemaTo": "tbos",
           "columnsFrom": [
             "conversation_id"
           ],
@@ -7891,9 +7892,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.invoice_customers": {
+    "tbos.invoice_customers": {
       "name": "invoice_customers",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -7992,9 +7993,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.invoice_items": {
+    "tbos.invoice_items": {
       "name": "invoice_items",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -8105,9 +8106,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.invoice_settings": {
+    "tbos.invoice_settings": {
       "name": "invoice_settings",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",
@@ -8221,9 +8222,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.invoices": {
+    "tbos.invoices": {
       "name": "invoices",
-      "schema": "",
+      "schema": "tbos",
       "columns": {
         "id": {
           "name": "id",

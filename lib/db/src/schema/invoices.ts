@@ -1,9 +1,10 @@
-import { pgTable, serial, text, real, integer, timestamp, boolean } from "drizzle-orm/pg-core";
+import { serial, text, real, integer, timestamp, boolean } from "drizzle-orm/pg-core";
+import { tbosSchema } from "./_pg-schema";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
 // Per-company invoice settings: prefix, numbering, bank details, etc.
-export const invoiceSettingsTable = pgTable("invoice_settings", {
+export const invoiceSettingsTable = tbosSchema.table("invoice_settings", {
   id: serial("id").primaryKey(),
   companyId: integer("company_id").notNull().unique(),
   prefix: text("prefix").notNull().default("INV"), // e.g. HUG, UTG, INV
@@ -22,7 +23,7 @@ export const invoiceSettingsTable = pgTable("invoice_settings", {
 });
 
 // Billing contacts per company (customers & vendors)
-export const invoiceCustomersTable = pgTable("invoice_customers", {
+export const invoiceCustomersTable = tbosSchema.table("invoice_customers", {
   id: serial("id").primaryKey(),
   companyId: integer("company_id").notNull(),
   name: text("name").notNull(),
@@ -40,7 +41,7 @@ export const invoiceCustomersTable = pgTable("invoice_customers", {
 });
 
 // The main document table: invoice / quotation / proforma / PO / SO etc.
-export const invoicesTable = pgTable("invoices", {
+export const invoicesTable = tbosSchema.table("invoices", {
   id: serial("id").primaryKey(),
   companyId: integer("company_id").notNull(),
   invoiceNumber: text("invoice_number").notNull(),
@@ -79,7 +80,7 @@ export const invoicesTable = pgTable("invoices", {
 });
 
 // Line items for an invoice
-export const invoiceItemsTable = pgTable("invoice_items", {
+export const invoiceItemsTable = tbosSchema.table("invoice_items", {
   id: serial("id").primaryKey(),
   invoiceId: integer("invoice_id").notNull(),
   productId: integer("product_id"), // optional — links to products table
