@@ -4,9 +4,10 @@
   "license": "MIT",
   "packageManager": "pnpm@10.33.0",
   "scripts": {
-    "preinstall": "sh -c 'rm -f package-lock.json yarn.lock; case \"$npm_config_user_agent\" in pnpm/*) ;; *) echo \"Use pnpm instead\" >&2; exit 1 ;; esac'",
+    "preinstall": "sh -c 'rm -f package-lock.json yarn.lock; case \"$npm_config_user_agent\" in pnpm/*) ;; *) echo \"Warning: this workspace expects pnpm — continuing anyway so hosts whose build pipeline runs npm install before delegating the real build to a pinned pnpm (see build:hostinger-npm) still work\" >&2 ;; esac'",
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
     "build:hostinger": "pnpm run typecheck && pnpm --filter @workspace/tapashub run build && pnpm --filter @workspace/api-server run build",
+    "build:hostinger-npm": "npx --yes pnpm@10.33.0 install --frozen-lockfile && npx --yes pnpm@10.33.0 run typecheck && npx --yes pnpm@10.33.0 --filter @workspace/tapashub run build && npx --yes pnpm@10.33.0 --filter @workspace/api-server run build",
     "start": "pnpm --filter @workspace/api-server run start",
     "start:hostinger": "node --env-file=.env --enable-source-maps artifacts/api-server/dist/index.mjs",
     "typecheck:libs": "tsc --build",
