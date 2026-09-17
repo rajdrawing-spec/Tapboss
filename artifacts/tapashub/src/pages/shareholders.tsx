@@ -23,7 +23,7 @@ interface Shareholder {
   id: number; companyId: number; companyName: string
   name: string; email: string | null; type: string; role: string
   shares: number; sharePrice: number; investmentAmount: number
-  ownershipPercent: number; status: string; joinedDate: string | null
+  ownershipPercent: number; holderCompanyId: number | null; status: string; joinedDate: string | null
   notes: string | null; invitedAt: string | null; createdAt: string
 }
 interface ShareTx {
@@ -90,10 +90,12 @@ const TX_LABELS: Record<string, string> = {
 interface Form {
   id?: number; companyId: string; name: string; email: string; type: string; role: string
   shares: string; sharePrice: string; investmentAmount: string; status: string; joinedDate: string; notes: string
+  holderCompanyId: string
 }
 const emptyForm = (companyId = ""): Form => ({
   companyId, name: "", email: "", type: "individual", role: "investor",
   shares: "", sharePrice: "", investmentAmount: "", status: "active", joinedDate: "", notes: "",
+  holderCompanyId: "",
 })
 
 interface TxForm { type: string; shares: string; pricePerShare: string; amount: string; date: string; note: string }
@@ -562,13 +564,21 @@ function AdminShareholdersView() {
       id: h.id, companyId: String(h.companyId), name: h.name, email: h.email ?? "", type: h.type, role: h.role,
       shares: String(h.shares), sharePrice: String(h.sharePrice), investmentAmount: String(h.investmentAmount),
       status: h.status, joinedDate: h.joinedDate ?? "", notes: h.notes ?? "",
+      holderCompanyId: h.holderCompanyId != null ? String(h.holderCompanyId) : "",
     })
     setShowForm(true)
   }
 
+  // Companies this cap table's holder can represent instead of an outside
+  // individual/entity — only the parent, and never the company whose own cap
+  // table is being edited (a company can't hold shares in itself).
+  const linkableCompanies = (companies ?? []).filter((c) => c.type === "parent" && String(c.id) !== form.companyId)
+  const isCompanyHolder = form.holderCompanyId !== ""
+
   function submit() {
-    if (!form.name.trim()) { toast({ title: "Name is required", variant: "destructive" }); return }
+    if (!isCompanyHolder && !form.name.trim()) { toast({ title: "Name is required", variant: "destructive" }); return }
     if (!form.companyId) { toast({ title: "Pick a company", variant: "destructive" }); return }
+    if (isCompanyHolder && !form.holderCompanyId) { toast({ title: "Pick which company holds this stake", variant: "destructive" }); return }
     const body: Record<string, unknown> = {
       name: form.name.trim(),
       email: form.email.trim() || null,
@@ -580,6 +590,7 @@ function AdminShareholdersView() {
       status: form.status,
       joinedDate: form.joinedDate || null,
       notes: form.notes.trim() || null,
+      holderCompanyId: isCompanyHolder ? Number(form.holderCompanyId) : null,
     }
     if (!form.id) body.companyId = Number(form.companyId)
     save.mutate(body)
@@ -733,33 +744,68 @@ function AdminShareholdersView() {
             {!form.id && (
               <div className="space-y-1.5">
                 <Label>Company</Label>
-                <Select value={form.companyId} onValueChange={(v) => setForm({ ...form, companyId: v })}>
+                <Select value={form.companyId} onValueChange={(v) => setForm({ ...form, companyId: v, holderCompanyId: "" })}>
                   <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
                   <SelectContent>{(companies ?? []).map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}</SelectContent>
                 </Select>
+                <p className="text-xs text-muted-foreground">This is the company whose cap table the holder appears in.</p>
+              </div>
+            )}
+            {linkableCompanies.length > 0 && (
+              <label className="flex items-center gap-2 text-sm rounded-md border p-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isCompanyHolder}
+                  onChange={(e) => setForm({
+                    ...form,
+                    holderCompanyId: e.target.checked ? String(linkableCompanies[0].id) : "",
+                    name: e.target.checked ? linkableCompanies[0].name : form.name,
+                    type: e.target.checked ? "entity" : form.type,
+                  })}
+                  className="h-4 w-4"
+                />
+                <span>This holder is one of our tracked companies (e.g. the parent's own stake)</span>
+              </label>
+            )}
+            {isCompanyHolder ? (
+              <div className="space-y-1.5">
+                <Label>Holding company</Label>
+                <Select
+                  value={form.holderCompanyId}
+                  onValueChange={(v) => setForm({ ...form, holderCompanyId: v, name: linkableCompanies.find((c) => String(c.id) === v)?.name ?? form.name, type: "entity" })}
+                >
+                  <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                  <SelectContent>{linkableCompanies.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}</SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Ownership % here will automatically drive this company&apos;s parent-ownership figure across the app.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Name</Label>
+                  <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Full name" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Email</Label>
+                  <Input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="name@email.com" />
+                </div>
               </div>
             )}
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Name</Label>
-                <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Full name" />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Email</Label>
-                <Input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="name@email.com" />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Holder type</Label>
-                <Select value={form.type} onValueChange={(v) => setForm({ ...form, type: v })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="individual">Individual</SelectItem>
-                    <SelectItem value="entity">Entity / Company</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              {!isCompanyHolder && (
+                <div className="space-y-1.5">
+                  <Label>Holder type</Label>
+                  <Select value={form.type} onValueChange={(v) => setForm({ ...form, type: v })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="individual">Individual</SelectItem>
+                      <SelectItem value="entity">Entity / Company</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <div className="space-y-1.5">
                 <Label>Role</Label>
                 <Select value={form.role} onValueChange={(v) => setForm({ ...form, role: v })}>

@@ -139,7 +139,7 @@ export default function Companies() {
       type: form.type,
       industry: form.industry || undefined,
       category: form.category || undefined,
-      ownershipPercent: Number(form.ownershipPercent) || 0,
+      ownershipPercent: Math.min(100, Math.max(0, Number(form.ownershipPercent) || 0)),
       website: form.website || undefined,
       description: form.description || undefined,
       country: form.country || undefined,
@@ -402,7 +402,7 @@ export default function Companies() {
                 <Input value={form.industry} onChange={(e) => set("industry", e.target.value)} />
               </Field>
               <Field label="Ownership %">
-                <Input type="number" value={form.ownershipPercent} onChange={(e) => set("ownershipPercent", e.target.value)} />
+                <Input type="number" min={0} max={100} step="0.01" value={form.ownershipPercent} onChange={(e) => set("ownershipPercent", e.target.value)} />
               </Field>
               <Field label="Brand Color">
                 <div className="flex items-center gap-2">
