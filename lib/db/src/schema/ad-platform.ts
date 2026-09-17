@@ -1,4 +1,5 @@
-import { pgTable, serial, text, integer, real, timestamp, boolean, jsonb, uniqueIndex } from "drizzle-orm/pg-core";
+import { serial, text, integer, real, timestamp, boolean, jsonb, uniqueIndex } from "drizzle-orm/pg-core";
+import { tbosSchema } from "./_pg-schema";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -9,7 +10,7 @@ import { z } from "zod/v4";
  * dashboards never call platform APIs directly.
  */
 
-export const adConnectionsTable = pgTable("ad_connections", {
+export const adConnectionsTable = tbosSchema.table("ad_connections", {
   id: serial("id").primaryKey(),
   companyId: integer("company_id").notNull(),
   platform: text("platform").notNull(), // meta|google_ads|ga4
@@ -25,7 +26,7 @@ export const adConnectionsTable = pgTable("ad_connections", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
-export const adAccountsTable = pgTable("ad_accounts", {
+export const adAccountsTable = tbosSchema.table("ad_accounts", {
   id: serial("id").primaryKey(),
   connectionId: integer("connection_id").notNull(),
   companyId: integer("company_id").notNull(),
@@ -42,7 +43,7 @@ export const adAccountsTable = pgTable("ad_accounts", {
 ]);
 
 /** One row per campaign per day per source — the dedupe boundary for syncs. */
-export const campaignDailyMetricsTable = pgTable("campaign_daily_metrics", {
+export const campaignDailyMetricsTable = tbosSchema.table("campaign_daily_metrics", {
   id: serial("id").primaryKey(),
   companyId: integer("company_id").notNull(),
   campaignId: integer("campaign_id").notNull(), // FK to campaigns.id
@@ -66,7 +67,7 @@ export const campaignDailyMetricsTable = pgTable("campaign_daily_metrics", {
  * Kept separate from campaign_daily_metrics because these are site-wide
  * numbers with no campaign identity.
  */
-export const siteDailyMetricsTable = pgTable("site_daily_metrics", {
+export const siteDailyMetricsTable = tbosSchema.table("site_daily_metrics", {
   id: serial("id").primaryKey(),
   companyId: integer("company_id").notNull(),
   propertyId: text("property_id").notNull(), // GA4 property id
@@ -83,7 +84,7 @@ export const siteDailyMetricsTable = pgTable("site_daily_metrics", {
   uniqueIndex("site_daily_metrics_uniq").on(t.companyId, t.propertyId, t.date),
 ]);
 
-export const syncJobsTable = pgTable("sync_jobs", {
+export const syncJobsTable = tbosSchema.table("sync_jobs", {
   id: serial("id").primaryKey(),
   connectionId: integer("connection_id").notNull(),
   companyId: integer("company_id").notNull(),
@@ -96,7 +97,7 @@ export const syncJobsTable = pgTable("sync_jobs", {
   error: text("error"),
 });
 
-export const syncLogsTable = pgTable("sync_logs", {
+export const syncLogsTable = tbosSchema.table("sync_logs", {
   id: serial("id").primaryKey(),
   jobId: integer("job_id").notNull(),
   level: text("level").notNull().default("info"), // info|warn|error
@@ -106,7 +107,7 @@ export const syncLogsTable = pgTable("sync_logs", {
 });
 
 /** Generated marketing reports; clients may only see approved ones. */
-export const marketingReportsTable = pgTable("marketing_reports", {
+export const marketingReportsTable = tbosSchema.table("marketing_reports", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").notNull(),
   companyId: integer("company_id").notNull(),

@@ -132,6 +132,7 @@ CREATE TABLE "tbos"."product_images" (
 	"company_id" integer NOT NULL,
 	"object_path" text NOT NULL,
 	"is_primary" boolean DEFAULT false NOT NULL,
+	"sort_order" integer DEFAULT 0 NOT NULL,
 	"alt_text" text,
 	"ai_tags" jsonb DEFAULT '[]'::jsonb,
 	"created_at" timestamp DEFAULT now() NOT NULL
@@ -157,6 +158,14 @@ CREATE TABLE "tbos"."product_marketplace_templates" (
 	"is_active" boolean DEFAULT true NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "tbos"."product_media_uploads" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"company_id" integer NOT NULL,
+	"object_path" text NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "product_media_uploads_object_path_unique" UNIQUE("object_path")
 );
 --> statement-breakpoint
 CREATE TABLE "tbos"."product_variants" (
@@ -512,6 +521,7 @@ CREATE TABLE "tbos"."shipments" (
 CREATE TABLE "tbos"."documents" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"company_id" integer,
+	"client_vendor_id" integer,
 	"name" text NOT NULL,
 	"category" text DEFAULT 'other' NOT NULL,
 	"file_url" text,
@@ -530,6 +540,8 @@ CREATE TABLE "tbos"."campaigns" (
 	"company_id" integer NOT NULL,
 	"project_id" integer,
 	"client_visible" boolean DEFAULT false NOT NULL,
+	"external_id" text,
+	"ad_account_id" integer,
 	"name" text NOT NULL,
 	"channel" text DEFAULT 'meta' NOT NULL,
 	"objective" text DEFAULT 'conversions',
@@ -601,6 +613,105 @@ CREATE TABLE "tbos"."marketing_projects" (
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "tbos"."ad_accounts" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"connection_id" integer NOT NULL,
+	"company_id" integer NOT NULL,
+	"platform" text NOT NULL,
+	"external_id" text NOT NULL,
+	"name" text,
+	"currency" text,
+	"status" text DEFAULT 'active' NOT NULL,
+	"sync_enabled" boolean DEFAULT true NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "tbos"."ad_connections" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"company_id" integer NOT NULL,
+	"platform" text NOT NULL,
+	"status" text DEFAULT 'connected' NOT NULL,
+	"account_label" text,
+	"credentials_enc" text NOT NULL,
+	"scopes" text,
+	"last_synced_at" timestamp,
+	"last_error" text,
+	"connected_by_user_id" integer,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "tbos"."campaign_daily_metrics" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"company_id" integer NOT NULL,
+	"campaign_id" integer NOT NULL,
+	"date" text NOT NULL,
+	"source" text DEFAULT 'manual' NOT NULL,
+	"spend" real DEFAULT 0 NOT NULL,
+	"revenue" real DEFAULT 0 NOT NULL,
+	"impressions" integer DEFAULT 0 NOT NULL,
+	"reach" integer DEFAULT 0 NOT NULL,
+	"clicks" integer DEFAULT 0 NOT NULL,
+	"leads" integer DEFAULT 0 NOT NULL,
+	"conversions" integer DEFAULT 0 NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "tbos"."marketing_reports" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"project_id" integer NOT NULL,
+	"company_id" integer NOT NULL,
+	"type" text DEFAULT 'custom' NOT NULL,
+	"title" text NOT NULL,
+	"period_from" text NOT NULL,
+	"period_to" text NOT NULL,
+	"status" text DEFAULT 'draft' NOT NULL,
+	"payload" jsonb,
+	"pdf_path" text,
+	"generated_by_user_id" integer,
+	"approved_by_user_id" integer,
+	"approved_at" timestamp,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "tbos"."site_daily_metrics" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"company_id" integer NOT NULL,
+	"property_id" text NOT NULL,
+	"date" text NOT NULL,
+	"sessions" integer DEFAULT 0 NOT NULL,
+	"users" integer DEFAULT 0 NOT NULL,
+	"conversions" real DEFAULT 0 NOT NULL,
+	"revenue" real DEFAULT 0 NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "tbos"."sync_jobs" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"connection_id" integer NOT NULL,
+	"company_id" integer NOT NULL,
+	"platform" text NOT NULL,
+	"trigger" text DEFAULT 'scheduled' NOT NULL,
+	"status" text DEFAULT 'running' NOT NULL,
+	"started_at" timestamp DEFAULT now() NOT NULL,
+	"finished_at" timestamp,
+	"rows_upserted" integer DEFAULT 0 NOT NULL,
+	"error" text
+);
+--> statement-breakpoint
+CREATE TABLE "tbos"."sync_logs" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"job_id" integer NOT NULL,
+	"level" text DEFAULT 'info' NOT NULL,
+	"message" text NOT NULL,
+	"detail" jsonb,
+	"created_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE "tbos"."client_ai_plans" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"project_id" integer NOT NULL,
@@ -633,6 +744,34 @@ CREATE TABLE "tbos"."client_visibility_settings" (
 	"settings" json NOT NULL,
 	"updated_by" integer,
 	"updated_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "tbos"."client_vendors" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"company_id" integer NOT NULL,
+	"type" text NOT NULL,
+	"name" text NOT NULL,
+	"organization_name" text,
+	"contact_person" text,
+	"email" text,
+	"phone" text,
+	"whatsapp" text,
+	"website" text,
+	"address" text,
+	"notes" text,
+	"status" text DEFAULT 'active' NOT NULL,
+	"custom_fields" jsonb,
+	"legacy_source" text,
+	"legacy_source_id" integer,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "tbos"."user_client_vendor_access" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"user_id" integer NOT NULL,
+	"client_vendor_id" integer NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "tbos"."treasury_entries" (
@@ -761,6 +900,7 @@ CREATE TABLE "tbos"."ai_report_schedules" (
 CREATE TABLE "tbos"."generated_tasks" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"company_id" integer NOT NULL,
+	"client_vendor_id" integer,
 	"employee_id" integer NOT NULL,
 	"template_id" integer,
 	"generated_date" date NOT NULL,
@@ -1241,6 +1381,7 @@ CREATE INDEX "product_import_jobs_company_id_idx" ON "tbos"."product_import_jobs
 CREATE INDEX "product_import_jobs_status_idx" ON "tbos"."product_import_jobs" USING btree ("status");--> statement-breakpoint
 CREATE INDEX "product_marketplace_templates_company_id_idx" ON "tbos"."product_marketplace_templates" USING btree ("company_id");--> statement-breakpoint
 CREATE INDEX "product_marketplace_templates_marketplace_idx" ON "tbos"."product_marketplace_templates" USING btree ("marketplace");--> statement-breakpoint
+CREATE INDEX "product_media_uploads_company_id_idx" ON "tbos"."product_media_uploads" USING btree ("company_id");--> statement-breakpoint
 CREATE INDEX "product_variants_product_id_idx" ON "tbos"."product_variants" USING btree ("product_id");--> statement-breakpoint
 CREATE INDEX "product_variants_company_id_idx" ON "tbos"."product_variants" USING btree ("company_id");--> statement-breakpoint
 CREATE INDEX "product_variants_sku_idx" ON "tbos"."product_variants" USING btree ("sku");--> statement-breakpoint
@@ -1261,10 +1402,18 @@ CREATE INDEX "activity_company_timestamp_idx" ON "tbos"."activity" USING btree (
 CREATE UNIQUE INDEX "integration_conn_company_platform_uq" ON "tbos"."integration_connections" USING btree ("company_id","platform_key");--> statement-breakpoint
 CREATE UNIQUE INDEX "integration_cred_conn_env_uq" ON "tbos"."integration_credentials" USING btree ("connection_id","env_name");--> statement-breakpoint
 CREATE UNIQUE INDEX "marketing_projects_company_uniq" ON "tbos"."marketing_projects" USING btree ("company_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "ad_accounts_conn_ext_uniq" ON "tbos"."ad_accounts" USING btree ("connection_id","external_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "campaign_daily_metrics_uniq" ON "tbos"."campaign_daily_metrics" USING btree ("campaign_id","date","source");--> statement-breakpoint
+CREATE UNIQUE INDEX "site_daily_metrics_uniq" ON "tbos"."site_daily_metrics" USING btree ("company_id","property_id","date");--> statement-breakpoint
 CREATE INDEX "client_ai_plans_project_idx" ON "tbos"."client_ai_plans" USING btree ("project_id");--> statement-breakpoint
 CREATE INDEX "client_audit_project_idx" ON "tbos"."client_audit_logs" USING btree ("project_id");--> statement-breakpoint
 CREATE INDEX "client_audit_created_idx" ON "tbos"."client_audit_logs" USING btree ("created_at");--> statement-breakpoint
 CREATE UNIQUE INDEX "client_visibility_project_uniq" ON "tbos"."client_visibility_settings" USING btree ("project_id");--> statement-breakpoint
+CREATE INDEX "client_vendors_company_idx" ON "tbos"."client_vendors" USING btree ("company_id");--> statement-breakpoint
+CREATE INDEX "client_vendors_type_idx" ON "tbos"."client_vendors" USING btree ("type");--> statement-breakpoint
+CREATE UNIQUE INDEX "client_vendors_legacy_source_idx" ON "tbos"."client_vendors" USING btree ("legacy_source","legacy_source_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "user_cv_access_unique" ON "tbos"."user_client_vendor_access" USING btree ("user_id","client_vendor_id");--> statement-breakpoint
+CREATE INDEX "user_cv_access_user_idx" ON "tbos"."user_client_vendor_access" USING btree ("user_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "chat_channel_members_channel_user_idx" ON "tbos"."chat_channel_members" USING btree ("channel_id","user_id");--> statement-breakpoint
 CREATE INDEX "chat_channels_company_id_idx" ON "tbos"."chat_channels" USING btree ("company_id");--> statement-breakpoint
 CREATE INDEX "chat_channels_type_idx" ON "tbos"."chat_channels" USING btree ("type");--> statement-breakpoint

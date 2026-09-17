@@ -1,4 +1,5 @@
-import { pgTable, serial, text, integer, timestamp, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { serial, text, integer, timestamp, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { tbosSchema } from "./_pg-schema";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -7,7 +8,7 @@ import { z } from "zod/v4";
  * Each row belongs to exactly one sub-company. This is additive and separate
  * from the legacy `customers` (CRM buyers) and `vendors` (procurement) tables.
  */
-export const clientVendorsTable = pgTable("client_vendors", {
+export const clientVendorsTable = tbosSchema.table("client_vendors", {
   id: serial("id").primaryKey(),
   companyId: integer("company_id").notNull(),
   type: text("type").notNull(), // client|vendor
@@ -42,7 +43,7 @@ export const clientVendorsTable = pgTable("client_vendors", {
  * No rows for a user = no restriction (sees all clients/vendors permitted by
  * their company scope + module permissions, per role default).
  */
-export const userClientVendorAccessTable = pgTable("user_client_vendor_access", {
+export const userClientVendorAccessTable = tbosSchema.table("user_client_vendor_access", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull(),
   clientVendorId: integer("client_vendor_id").notNull(),
