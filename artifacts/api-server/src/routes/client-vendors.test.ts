@@ -95,6 +95,14 @@ vi.mock("@workspace/db", () => ({
   employeesTable: H.makeTable("employees"),
   ordersTable: H.makeTable("orders"),
   transactionsTable: H.makeTable("transactions"),
+  // Referenced by companies.ts's pre-delete dependent-record check — this
+  // suite never calls DELETE /companies, so these just need to exist.
+  customersTable: H.makeTable("customers"),
+  shareholdersTable: H.makeTable("shareholders"),
+  invoicesTable: H.makeTable("invoices"),
+  documentsTable: H.makeTable("documents"),
+  shipmentsTable: H.makeTable("shipments"),
+  campaignsTable: H.makeTable("campaigns"),
   insertClientVendorSchema: { safeParse: (b: any) => (b && b.name && b.companyId && b.type ? { success: true, data: b } : { success: false }) },
   updateClientVendorSchema: { safeParse: (b: any) => ({ success: true, data: b }) },
   insertCompanySchema: { safeParse: () => ({ success: false }) },

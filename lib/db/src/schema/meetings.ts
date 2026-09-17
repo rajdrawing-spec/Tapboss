@@ -1,4 +1,5 @@
-import { pgTable, serial, integer, text, timestamp, boolean, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { serial, integer, text, timestamp, boolean, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { tbosSchema } from "./_pg-schema";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -12,7 +13,7 @@ export const participantStatuses = ["invited", "accepted", "rejected", "joined"]
 export type ParticipantStatus = (typeof participantStatuses)[number];
 
 // ── meeting_settings: company-level defaults and admin toggles ────────────────
-export const meetingSettingsTable = pgTable(
+export const meetingSettingsTable = tbosSchema.table(
   "meeting_settings",
   {
     id: serial("id").primaryKey(),
@@ -38,7 +39,7 @@ export type MeetingSettings = typeof meetingSettingsTable.$inferSelect;
 export type NewMeetingSettings = typeof meetingSettingsTable.$inferInsert;
 
 // ── meetings: scheduled and instant meeting records ───────────────────────────
-export const meetingsTable = pgTable(
+export const meetingsTable = tbosSchema.table(
   "meetings",
   {
     id: serial("id").primaryKey(),
@@ -75,7 +76,7 @@ export type Meeting = typeof meetingsTable.$inferSelect;
 export type NewMeeting = typeof meetingsTable.$inferInsert;
 
 // ── meeting_participants: who was invited and who joined ──────────────────────
-export const meetingParticipantsTable = pgTable(
+export const meetingParticipantsTable = tbosSchema.table(
   "meeting_participants",
   {
     id: serial("id").primaryKey(),
@@ -108,7 +109,7 @@ export interface MeetingActionItem {
   taskId?: number; // generated_tasks row created from this item
 }
 
-export const aiMeetingNotesTable = pgTable(
+export const aiMeetingNotesTable = tbosSchema.table(
   "ai_meeting_notes",
   {
     id: serial("id").primaryKey(),

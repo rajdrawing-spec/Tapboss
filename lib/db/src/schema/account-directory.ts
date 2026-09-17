@@ -1,4 +1,5 @@
-import { pgTable, serial, text, integer, boolean, timestamp, date } from "drizzle-orm/pg-core";
+import { serial, text, integer, boolean, timestamp, date } from "drizzle-orm/pg-core";
+import { tbosSchema } from "./_pg-schema";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -6,7 +7,7 @@ import { z } from "zod/v4";
  * Account Directory — records account METADATA only. It never stores passwords.
  * Lets teams find which account/email/phone belongs to which platform + company.
  */
-export const accountDirectoryTable = pgTable("account_directory", {
+export const accountDirectoryTable = tbosSchema.table("account_directory", {
   id: serial("id").primaryKey(),
   companyId: integer("company_id"), // null = group-level
   platform: text("platform").notNull(),

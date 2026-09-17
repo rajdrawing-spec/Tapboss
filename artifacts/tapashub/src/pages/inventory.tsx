@@ -1,10 +1,8 @@
 import * as React from "react"
-import { useListCompanies } from "@workspace/api-client-react"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { useListProducts, getListProductsQueryKey, useListCompanies } from "@workspace/api-client-react"
+import { useQueryClient } from "@tanstack/react-query"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Skeleton } from "@/components/ui/skeleton"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
@@ -13,9 +11,12 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Search, Plus, Pencil, Trash2, PackageSearch, AlertTriangle, Sparkles, Upload, Download, Wand2, ScanBarcode, ImagePlus, Loader2, FileSpreadsheet, Check, Link, RefreshCw, ArrowLeft, ArrowRight, Star, X } from "lucide-react"
+import { useFabAction } from "@/lib/fab-action"
 import { useCompany } from "@/contexts/company-context"
 import { useToast } from "@/hooks/use-toast"
 import AiProductPanel from "@/components/ai-products/ai-product-panel"
+import { ResponsiveTable, type ResponsiveTableColumn, type ResponsiveTableAction } from "@/components/responsive-table"
+import { QueryState } from "@/components/query-state"
 
 const API_BASE = ""
 
@@ -146,41 +147,26 @@ export default function Inventory() {
 
   const { data: companies } = useListCompanies({ query: { enabled: true, queryKey: ["/api/companies"] } })
 
-  const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ["/api/products", activeCompany?.id ?? null, page, search],
-    queryFn: async () => {
-      const params = new URLSearchParams({ page: String(page), limit: "20" })
-      if (activeCompany) params.set("companyId", String(activeCompany.id))
-      if (search) params.set("search", search)
-      const response = await fetch(`/api/products?${params.toString()}`, {
-        credentials: "include",
-        cache: "no-store",
-        headers: { Accept: "application/json" },
-      })
-      const body = await response.json().catch(() => null)
-      if (!response.ok) {
-        const requestError = new Error(body?.error || `Could not load products (${response.status})`) as Error & {
-          status?: number
-        }
-        requestError.status = response.status
-        throw requestError
-      }
-      if (!body || !Array.isArray(body.items) || typeof body.total !== "number") {
-        throw new Error("The products service returned an invalid response")
-      }
-      return body as { items: any[]; total: number; page: number; limit: number }
+  const params: Record<string, string | number> = { page, limit: 20 }
+  if (activeCompany) params.companyId = activeCompany.id
+  if (search) params.search = search
+
+  const { data, isLoading, isError, refetch } = useListProducts(params, {
+    query: {
+      enabled: true,
+      queryKey: getListProductsQueryKey(params),
+      staleTime: 0,
+      // The static frontend can become available before the API has completed
+      // its production startup migrations. Keep retrying transient gateway/server
+      // failures through that warm-up window instead of leaving a false error.
+      retry: (failureCount, requestError) => {
+        const status = (requestError as { status?: number } | undefined)?.status
+        return (status == null || status >= 500) && failureCount < 8
+      },
+      retryDelay: 3_000,
+      refetchOnMount: "always",
+      refetchOnWindowFocus: true,
     },
-    staleTime: 0,
-    // The static frontend can become available before the API has completed
-    // its production startup migrations. Keep retrying transient gateway/server
-    // failures through that warm-up window instead of leaving a false error.
-    retry: (failureCount, requestError) => {
-      const status = (requestError as Error & { status?: number }).status
-      return (status == null || status >= 500) && failureCount < 8
-    },
-    retryDelay: 3_000,
-    refetchOnMount: "always",
-    refetchOnWindowFocus: true,
   })
 
   React.useEffect(() => {
@@ -318,6 +304,8 @@ export default function Inventory() {
     setBarcodeImage(null)
     setShowDialog(true)
   }
+
+  useFabAction("Add Product", () => openAdd())
 
   function openAdd() {
     setEditing(null)
@@ -751,6 +739,102 @@ export default function Inventory() {
 
   const f = (k: keyof ProductForm, v: string) => setForm(frm => ({ ...frm, [k]: v }))
 
+  const productColumns: ResponsiveTableColumn<any>[] = [
+    {
+      key: "image", header: "", headClassName: "w-14", card: "hidden",
+      cell: (p) => p.imageUrl ? (
+        <img
+          src={productImagePreview(p.imageUrl)}
+          alt={p.name}
+          className="w-10 h-10 rounded-md object-cover border border-border/50 bg-muted"
+          onError={e => { (e.target as HTMLImageElement).style.display = "none" }}
+        />
+      ) : (
+        <div className="w-10 h-10 rounded-md border border-border/50 bg-muted flex items-center justify-center">
+          <PackageSearch className="w-4 h-4 text-muted-foreground/40" />
+        </div>
+      ),
+      cellClassName: "pr-0",
+    },
+    {
+      key: "product", header: "Product", card: "title",
+      cell: (p) => <div className="font-medium">{p.name}</div>,
+      cardCell: (p) => (
+        <div className="flex items-center gap-2">
+          {p.imageUrl ? (
+            <img src={productImagePreview(p.imageUrl)} alt="" className="w-7 h-7 rounded object-cover border border-border/50 bg-muted shrink-0" onError={e => { (e.target as HTMLImageElement).style.display = "none" }} />
+          ) : (
+            <div className="w-7 h-7 rounded border border-border/50 bg-muted flex items-center justify-center shrink-0">
+              <PackageSearch className="w-3 h-3 text-muted-foreground/40" />
+            </div>
+          )}
+          <span className="truncate">{p.name}</span>
+        </div>
+      ),
+    },
+    {
+      key: "companyName", header: "Company", card: "subtitle",
+      cell: (p) => (
+        <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+          <span>{p.companyName}</span>
+          {p.sourceLink && (
+            <a href={p.sourceLink} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 text-blue-700 dark:text-blue-400 hover:text-blue-300" onClick={e => e.stopPropagation()}>
+              <Link className="w-3 h-3" />
+            </a>
+          )}
+        </div>
+      ),
+    },
+    { key: "sku", header: "SKU", cell: (p) => <span className="font-mono text-xs">{p.sku ?? "—"}</span> },
+    { key: "category", header: "Category", cell: (p) => <span className="text-sm">{p.category ?? "—"}{p.subcategory ? ` · ${p.subcategory}` : ""}</span> },
+    { key: "price", header: "Price", cell: (p) => <span className="font-semibold">₹{Number(p.price).toLocaleString("en-IN")}</span> },
+    {
+      key: "stock", header: "Stock",
+      cell: (p) => {
+        const lowStock = p.stockQuantity <= p.reorderLevel
+        return (
+          <div className="flex items-center gap-1.5">
+            {lowStock && <AlertTriangle className="w-3.5 h-3.5 text-yellow-500" />}
+            <span className={lowStock ? "text-yellow-700 dark:text-yellow-400 font-medium" : ""}>{p.stockQuantity}</span>
+            <span className="text-xs text-muted-foreground">/ min {p.reorderLevel}</span>
+          </div>
+        )
+      },
+    },
+    {
+      key: "status", header: "Status", card: "badge",
+      cell: (p) => <Badge variant={p.status === "active" ? "default" : "secondary"} className="text-xs capitalize">{p.status}</Badge>,
+    },
+  ]
+
+  const selectionColumn: ResponsiveTableColumn<any> = {
+    key: "select",
+    card: "hidden",
+    header: (
+      <Checkbox
+        checked={allVisibleSelected}
+        onCheckedChange={toggleSelectAll}
+        aria-label="Select all visible products"
+        data-testid="checkbox-select-all-products"
+      />
+    ),
+    cell: (p) => (
+      <Checkbox
+        checked={selectedIds.has(p.id)}
+        onCheckedChange={() => toggleProduct(p.id)}
+        aria-label={`Select ${p.name}`}
+        data-testid={`checkbox-product-${p.id}`}
+        onClick={(e) => e.stopPropagation()}
+      />
+    ),
+  }
+
+  const productActions: ResponsiveTableAction<any>[] = [
+    { label: "Edit", icon: Pencil, onClick: openEdit },
+    { label: "AI actions", icon: Sparkles, onClick: setAiProduct },
+    { label: "Delete", icon: Trash2, onClick: (p) => handleDelete(p.id), destructive: true, disabled: (p) => deleting === p.id },
+  ]
+
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex items-center justify-between">
@@ -847,95 +931,18 @@ export default function Inventory() {
             {selectedIds.size > 0 && <Badge variant="secondary" className="px-3" data-testid="status-selection">{selectedIds.size} selected</Badge>}
           </div>
 
-          <div className="overflow-x-auto rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-10">
-                    <Checkbox checked={allVisibleSelected} onCheckedChange={toggleSelectAll} aria-label="Select all visible products" data-testid="checkbox-select-all-products" />
-                  </TableHead>
-                  <TableHead className="w-14" />
-                  <TableHead>Product</TableHead><TableHead>SKU</TableHead><TableHead>Category</TableHead>
-                  <TableHead>Price</TableHead><TableHead>Stock</TableHead><TableHead>Status</TableHead><TableHead className="w-20" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {isLoading ? Array.from({ length: 8 }).map((_, i) => (
-                  <TableRow key={i}><TableCell colSpan={9}><Skeleton className="h-8 w-full" /></TableCell></TableRow>
-                )) : isError ? (
-                  <TableRow><TableCell colSpan={9} className="h-40 text-center">
-                    <AlertTriangle className="mx-auto h-8 w-8 text-destructive mb-2" />
-                    <p className="font-medium">Products could not be loaded</p>
-                    <p className="text-sm text-muted-foreground mt-1">{error instanceof Error ? error.message : "Please try again."}</p>
-                    <Button variant="outline" size="sm" className="mt-3 gap-2" onClick={() => refetch()}>
-                      <RefreshCw className="h-4 w-4" />Retry
-                    </Button>
-                  </TableCell></TableRow>
-                ) : data?.items?.length === 0 ? (
-                  <TableRow><TableCell colSpan={9} className="h-32 text-center">
-                    <PackageSearch className="mx-auto h-8 w-8 opacity-20 mb-2" />
-                    <p className="text-muted-foreground">No products found</p>
-                  </TableCell></TableRow>
-                ) : data?.items?.map((p: any) => {
-                  const lowStock = p.stockQuantity <= p.reorderLevel
-                  return (
-                    <TableRow key={p.id} className="hover:bg-muted/30" data-state={selectedIds.has(p.id) ? "selected" : undefined}>
-                      <TableCell>
-                        <Checkbox checked={selectedIds.has(p.id)} onCheckedChange={() => toggleProduct(p.id)} aria-label={`Select ${p.name}`} data-testid={`checkbox-product-${p.id}`} />
-                      </TableCell>
-                      <TableCell className="pr-0">
-                        {p.imageUrl ? (
-                          <img
-                            src={productImagePreview(p.imageUrl)}
-                            alt={p.name}
-                            className="w-10 h-10 rounded-md object-cover border border-border/50 bg-muted"
-                            onError={e => { (e.target as HTMLImageElement).style.display = "none" }}
-                          />
-                        ) : (
-                          <div className="w-10 h-10 rounded-md border border-border/50 bg-muted flex items-center justify-center">
-                            <PackageSearch className="w-4 h-4 text-muted-foreground/40" />
-                          </div>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <div className="font-medium">{p.name}</div>
-                        <div className="text-xs text-muted-foreground flex items-center gap-1.5">
-                          <span>{p.companyName}</span>
-                          {p.sourceLink && (
-                            <a href={p.sourceLink} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 text-blue-400 hover:text-blue-300" onClick={e => e.stopPropagation()}>
-                              <Link className="w-3 h-3" />
-                            </a>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell className="font-mono text-xs">{p.sku ?? "—"}</TableCell>
-                      <TableCell className="text-sm">{p.category ?? "—"}{p.subcategory ? ` · ${p.subcategory}` : ""}</TableCell>
-                      <TableCell className="font-semibold">₹{Number(p.price).toLocaleString("en-IN")}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1.5">
-                          {lowStock && <AlertTriangle className="w-3.5 h-3.5 text-yellow-500" />}
-                          <span className={lowStock ? "text-yellow-400 font-medium" : ""}>{p.stockQuantity}</span>
-                          <span className="text-xs text-muted-foreground">/ min {p.reorderLevel}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={p.status === "active" ? "default" : "secondary"} className="text-xs capitalize">{p.status}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex gap-1">
-                          <Button size="icon" variant="ghost" className="w-7 h-7" onClick={() => openEdit(p)}><Pencil className="w-3.5 h-3.5" /></Button>
-                          <Button size="icon" variant="ghost" className="w-7 h-7" onClick={() => setAiProduct(p)}><Sparkles className="w-3.5 h-3.5 text-purple-500" /></Button>
-                          <Button size="icon" variant="ghost" className="w-7 h-7 text-destructive hover:text-destructive" disabled={deleting === p.id} onClick={() => handleDelete(p.id)}>
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  )
-                })}
-              </TableBody>
-            </Table>
-          </div>
+          <QueryState
+            isLoading={isLoading}
+            isError={isError}
+            isEmpty={(data?.items?.length ?? 0) === 0}
+            onRetry={refetch}
+            errorMessage="Could not load products."
+            emptyMessage="No products found"
+            emptyIcon={PackageSearch}
+            loading={<ResponsiveTable columns={[selectionColumn, ...productColumns]} data={[]} rowKey={(p: any) => p.id} isLoading skeletonCount={8} actions={productActions} />}
+          >
+            <ResponsiveTable columns={[selectionColumn, ...productColumns]} data={data?.items ?? []} rowKey={(p: any) => p.id} actions={productActions} />
+          </QueryState>
           {data && data.total > 20 && (
             <div className="flex items-center justify-between mt-4 text-sm">
               <span className="text-muted-foreground">Page {page} of {Math.ceil(data.total / 20)}</span>
@@ -1038,13 +1045,13 @@ export default function Inventory() {
               </div>
               {variants.length === 0 && <p className="text-xs text-muted-foreground">No variants yet</p>}
               {variants.map((v, i) => (
-                <div key={i} className="grid grid-cols-4 gap-2 items-end">
+                <div key={i} className="grid grid-cols-2 sm:grid-cols-4 gap-2 items-end">
                   <Input placeholder="Variant name" value={v.name} onChange={e => updateVariant(i, "name", e.target.value)} />
                   <Input placeholder="SKU" value={v.sku} onChange={e => updateVariant(i, "sku", e.target.value)} />
                   <Input placeholder="Price" type="number" value={v.price} onChange={e => updateVariant(i, "price", e.target.value)} />
                   <div className="flex gap-2">
                     <Input placeholder="Stock" type="number" value={v.stockQuantity} onChange={e => updateVariant(i, "stockQuantity", e.target.value)} />
-                    <Button size="icon" variant="ghost" onClick={() => removeVariant(i)} type="button"><Trash2 className="w-4 h-4 text-destructive" /></Button>
+                    <Button size="icon" variant="ghost" onClick={() => removeVariant(i)} type="button" aria-label="Delete"><Trash2 className="w-4 h-4 text-destructive" /></Button>
                   </div>
                 </div>
               ))}

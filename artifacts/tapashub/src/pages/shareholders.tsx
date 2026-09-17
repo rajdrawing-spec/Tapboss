@@ -1,7 +1,6 @@
 import * as React from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { adminApi } from "@/lib/admin-api"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -16,13 +15,15 @@ import { useToast } from "@/hooks/use-toast"
 import { useAuth } from "@/contexts/auth-context"
 import { cn } from "@/lib/utils"
 import { ShareCertificateModal, type ShareCertificateData } from "@/components/share-certificate"
+import { ResponsiveTable, type ResponsiveTableColumn, type ResponsiveTableAction } from "@/components/responsive-table"
+import { QueryState } from "@/components/query-state"
 
 interface Company { id: number; name: string; type: string }
 interface Shareholder {
   id: number; companyId: number; companyName: string
   name: string; email: string | null; type: string; role: string
   shares: number; sharePrice: number; investmentAmount: number
-  ownershipPercent: number; status: string; joinedDate: string | null
+  ownershipPercent: number; holderCompanyId: number | null; status: string; joinedDate: string | null
   notes: string | null; invitedAt: string | null; createdAt: string
 }
 interface ShareTx {
@@ -76,11 +77,11 @@ const SHARE_TYPE_LABELS: Record<string, string> = {
   institutional: "INSTITUTIONAL SHARES",
 }
 const ROLE_STYLES: Record<string, string> = {
-  founder: "bg-blue-500/10 text-blue-400 border-blue-500/20",
-  investor: "bg-green-500/10 text-green-400 border-green-500/20",
-  employee: "bg-purple-500/10 text-purple-400 border-purple-500/20",
-  advisor: "bg-amber-500/10 text-amber-400 border-amber-500/20",
-  institutional: "bg-cyan-500/10 text-cyan-400 border-cyan-500/20",
+  founder: "bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20",
+  investor: "bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20",
+  employee: "bg-purple-500/10 text-purple-700 dark:text-purple-400 border-purple-500/20",
+  advisor: "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20",
+  institutional: "bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border-cyan-500/20",
 }
 const TX_LABELS: Record<string, string> = {
   purchase: "Purchase", sale: "Sale", grant: "Grant", dividend: "Dividend", transfer: "Transfer",
@@ -89,10 +90,12 @@ const TX_LABELS: Record<string, string> = {
 interface Form {
   id?: number; companyId: string; name: string; email: string; type: string; role: string
   shares: string; sharePrice: string; investmentAmount: string; status: string; joinedDate: string; notes: string
+  holderCompanyId: string
 }
 const emptyForm = (companyId = ""): Form => ({
   companyId, name: "", email: "", type: "individual", role: "investor",
   shares: "", sharePrice: "", investmentAmount: "", status: "active", joinedDate: "", notes: "",
+  holderCompanyId: "",
 })
 
 interface TxForm { type: string; shares: string; pricePerShare: string; amount: string; date: string; note: string }
@@ -100,7 +103,7 @@ const emptyTxForm = (): TxForm => ({ type: "purchase", shares: "", pricePerShare
 
 /** Self-service view for users who can only view their own holdings (no manage permission). */
 function MyHoldingsView() {
-  const { data: holdings, isLoading } = useQuery<Shareholder[]>({
+  const { data: holdings, isLoading, isError, refetch } = useQuery<Shareholder[]>({
     queryKey: ["/api/shareholders", "self"],
     queryFn: () => adminApi.get("/shareholders"),
   })
@@ -108,6 +111,48 @@ function MyHoldingsView() {
 
   const totalInvested = (holdings ?? []).reduce((s, h) => s + (h.investmentAmount ?? 0), 0)
   const totalShares   = (holdings ?? []).reduce((s, h) => s + (h.shares ?? 0), 0)
+
+  const holdingColumns: ResponsiveTableColumn<Shareholder>[] = [
+    {
+      key: "company", header: "Company", card: "title",
+      cell: (h) => (
+        <div>
+          <div className="font-medium">{h.companyName}</div>
+          <div className="text-xs text-muted-foreground">{h.name}</div>
+        </div>
+      ),
+      cardCell: (h) => h.companyName,
+    },
+    { key: "role", header: "Role", card: "subtitle", cell: (h) => <Badge variant="outline" className={ROLE_STYLES[h.role] ?? ""}>{ROLE_LABELS[h.role] ?? h.role}</Badge> },
+    { key: "shares", header: "Shares", headClassName: "text-right", cellClassName: "text-right", cell: (h) => num(h.shares) },
+    { key: "ownershipPercent", header: "Ownership", headClassName: "text-right", cellClassName: "text-right", cell: (h) => <span className="font-semibold">{h.ownershipPercent.toFixed(2)}%</span> },
+    { key: "investmentAmount", header: "Invested", headClassName: "text-right", cellClassName: "text-right", cell: (h) => <span className="text-muted-foreground">{inr(h.investmentAmount)}</span> },
+    {
+      key: "status", header: "Status", card: "badge",
+      cell: (h) => (
+        <Badge variant="outline" className={h.status === "active" ? "bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20" : "bg-muted text-muted-foreground"}>
+          {h.status === "active" ? "Active" : "Exited"}
+        </Badge>
+      ),
+    },
+  ]
+
+  const holdingActions: ResponsiveTableAction<Shareholder>[] = [
+    {
+      label: "Download certificate", icon: FileDown,
+      onClick: (h) => setCertData({
+        id: h.id,
+        holderName: h.name,
+        companyName: h.companyName,
+        shares: h.shares,
+        sharePrice: h.sharePrice,
+        investmentAmount: h.investmentAmount,
+        shareType: SHARE_TYPE_LABELS[h.role] ?? "EQUITY SHARES",
+        ownershipPercent: h.ownershipPercent,
+        joinedDate: h.joinedDate,
+      }),
+    },
+  ]
 
   return (
     <div className="space-y-6">
@@ -117,78 +162,26 @@ function MyHoldingsView() {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-3">
-        <SummaryCard icon={Users}     label="Companies" value={String(new Set((holdings ?? []).map((h) => h.companyId)).size)} loading={isLoading} accent="text-purple-400" />
-        <SummaryCard icon={PieChart}  label="Total Shares" value={isLoading ? "—" : num(totalShares)}     loading={isLoading} accent="text-blue-400" />
-        <SummaryCard icon={Wallet}    label="Total Invested" value={isLoading ? "—" : inr(totalInvested)} loading={isLoading} accent="text-amber-400" />
+        <SummaryCard icon={Users}     label="Companies" value={String(new Set((holdings ?? []).map((h) => h.companyId)).size)} loading={isLoading} accent="text-purple-700 dark:text-purple-400" />
+        <SummaryCard icon={PieChart}  label="Total Shares" value={isLoading ? "—" : num(totalShares)}     loading={isLoading} accent="text-blue-700 dark:text-blue-400" />
+        <SummaryCard icon={Wallet}    label="Total Invested" value={isLoading ? "—" : inr(totalInvested)} loading={isLoading} accent="text-amber-700 dark:text-amber-400" />
       </div>
 
       <Card>
         <CardHeader><CardTitle className="text-base">Holdings</CardTitle></CardHeader>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Company</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead className="text-right">Shares</TableHead>
-                <TableHead className="text-right">Ownership</TableHead>
-                <TableHead className="text-right">Invested</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Certificate</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {isLoading ? (
-                Array.from({ length: 3 }).map((_, i) => (
-                  <TableRow key={i}><TableCell colSpan={7}><Skeleton className="h-6 w-full" /></TableCell></TableRow>
-                ))
-              ) : !holdings || holdings.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={7} className="py-12 text-center text-muted-foreground">
-                    <PieChart className="mx-auto mb-2 h-8 w-8 opacity-40" />
-                    No shareholdings recorded for your email address yet.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                holdings.map((h) => (
-                  <TableRow key={h.id}>
-                    <TableCell>
-                      <div className="font-medium">{h.companyName}</div>
-                      <div className="text-xs text-muted-foreground">{h.name}</div>
-                    </TableCell>
-                    <TableCell><Badge variant="outline" className={ROLE_STYLES[h.role] ?? ""}>{ROLE_LABELS[h.role] ?? h.role}</Badge></TableCell>
-                    <TableCell className="text-right">{num(h.shares)}</TableCell>
-                    <TableCell className="text-right font-semibold">{h.ownershipPercent.toFixed(2)}%</TableCell>
-                    <TableCell className="text-right text-muted-foreground">{inr(h.investmentAmount)}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={h.status === "active" ? "bg-green-500/10 text-green-400 border-green-500/20" : "bg-muted text-muted-foreground"}>
-                        {h.status === "active" ? "Active" : "Exited"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        variant="ghost" size="icon"
-                        title="Download your share certificate PDF"
-                        onClick={() => setCertData({
-                          id: h.id,
-                          holderName: h.name,
-                          companyName: h.companyName,
-                          shares: h.shares,
-                          sharePrice: h.sharePrice,
-                          investmentAmount: h.investmentAmount,
-                          shareType: SHARE_TYPE_LABELS[h.role] ?? "EQUITY SHARES",
-                          ownershipPercent: h.ownershipPercent,
-                          joinedDate: h.joinedDate,
-                        })}
-                      >
-                        <FileDown className="h-4 w-4 text-blue-400" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
+        <CardContent className="p-3 md:p-0">
+          <QueryState
+            isLoading={isLoading}
+            isError={isError}
+            isEmpty={!holdings || holdings.length === 0}
+            onRetry={refetch}
+            errorMessage="Could not load your shareholdings."
+            emptyMessage="No shareholdings recorded for your email address yet."
+            emptyIcon={PieChart}
+            loading={<ResponsiveTable columns={holdingColumns} data={[]} rowKey={(h) => h.id} isLoading skeletonCount={3} actions={holdingActions} />}
+          >
+            <ResponsiveTable columns={holdingColumns} data={holdings ?? []} rowKey={(h) => h.id} actions={holdingActions} />
+          </QueryState>
         </CardContent>
       </Card>
 
@@ -203,19 +196,19 @@ function MyHoldingsView() {
 
 // ── AI Valuation Panel ────────────────────────────────────────────────────────
 const VALUATION_METHODS = [
-  { key: "assetValuation",      label: "Asset-Based",       weight: "20%", color: "text-amber-400" },
-  { key: "revenueMultipleVal",  label: "Revenue Multiple",  weight: "30%", color: "text-blue-400" },
-  { key: "ebitdaValuation",     label: "EBITDA Multiple",   weight: "20%", color: "text-purple-400" },
-  { key: "dcfValuation",        label: "DCF",               weight: "15%", color: "text-cyan-400" },
-  { key: "scorecardValuation",  label: "Scorecard",         weight: "10%", color: "text-green-400" },
+  { key: "assetValuation",      label: "Asset-Based",       weight: "20%", color: "text-amber-700 dark:text-amber-400" },
+  { key: "revenueMultipleVal",  label: "Revenue Multiple",  weight: "30%", color: "text-blue-700 dark:text-blue-400" },
+  { key: "ebitdaValuation",     label: "EBITDA Multiple",   weight: "20%", color: "text-purple-700 dark:text-purple-400" },
+  { key: "dcfValuation",        label: "DCF",               weight: "15%", color: "text-cyan-700 dark:text-cyan-400" },
+  { key: "scorecardValuation",  label: "Scorecard",         weight: "10%", color: "text-green-700 dark:text-green-400" },
   { key: "vcValuation",         label: "VC Method",         weight: "5%",  color: "text-rose-400" },
 ] as const
 
 const RATING_CONFIG: Record<string, { label: string; color: string; bar: string }> = {
-  excellent:         { label: "Excellent Investment Opportunity",  color: "text-green-400",  bar: "bg-green-500" },
-  strong:            { label: "Strong Investment Opportunity",     color: "text-blue-400",   bar: "bg-blue-500" },
-  moderate:          { label: "Moderate Risk",                     color: "text-amber-400",  bar: "bg-amber-500" },
-  needs_improvement: { label: "Needs Improvement",                 color: "text-red-400",    bar: "bg-red-500" },
+  excellent:         { label: "Excellent Investment Opportunity",  color: "text-green-700 dark:text-green-400",  bar: "bg-green-500" },
+  strong:            { label: "Strong Investment Opportunity",     color: "text-blue-700 dark:text-blue-400",   bar: "bg-blue-500" },
+  moderate:          { label: "Moderate Risk",                     color: "text-amber-700 dark:text-amber-400",  bar: "bg-amber-500" },
+  needs_improvement: { label: "Needs Improvement",                 color: "text-red-700 dark:text-red-400",    bar: "bg-red-500" },
 }
 
 function AiValuationPanel({ companyId }: { companyId: string }) {
@@ -252,10 +245,10 @@ function AiValuationPanel({ companyId }: { companyId: string }) {
   const valuation   = runValuation.data ?? cached
   const rating      = valuation?.investorRating ? RATING_CONFIG[valuation.investorRating] : null
   const healthColor = valuation?.healthTrend === "growing"
-    ? "text-green-400 bg-green-500/10 border-green-500/20"
+    ? "text-green-700 dark:text-green-400 bg-green-500/10 border-green-500/20"
     : valuation?.healthTrend === "declining"
-    ? "text-red-400 bg-red-500/10 border-red-500/20"
-    : "text-amber-400 bg-amber-500/10 border-amber-500/20"
+    ? "text-red-700 dark:text-red-400 bg-red-500/10 border-red-500/20"
+    : "text-amber-700 dark:text-amber-400 bg-amber-500/10 border-amber-500/20"
 
   if (!cid) return null
 
@@ -285,7 +278,7 @@ function AiValuationPanel({ companyId }: { companyId: string }) {
           </div>
         </div>
         <CardDescription className="text-xs">
-          Weighted average of 6 investor-grade methods. <span className="text-amber-400">Estimate only — not official financial advice.</span>
+          Weighted average of 6 investor-grade methods. <span className="text-amber-700 dark:text-amber-400">Estimate only — not official financial advice.</span>
         </CardDescription>
       </CardHeader>
 
@@ -323,13 +316,13 @@ function AiValuationPanel({ companyId }: { companyId: string }) {
 
           {/* ── Final estimate + core KPIs ── */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <ValKpi label="Est. Company Value"  value={inr(valuation.estimatedValue)}    accent="text-green-400" />
-            <ValKpi label="Enterprise Value"     value={inr(valuation.enterpriseValue)}   accent="text-blue-400" />
-            <ValKpi label="Shareholder Equity"   value={inr(valuation.shareholderEquity)} accent="text-purple-400" />
-            <ValKpi label="Net Asset Value"      value={inr(valuation.nav)}               accent="text-amber-400" />
-            <ValKpi label="Revenue Growth"       value={pct(valuation.revenueGrowthRate)} accent={valuation.revenueGrowthRate != null && valuation.revenueGrowthRate >= 0 ? "text-green-400" : "text-red-400"} />
-            <ValKpi label="Profit Growth"        value={pct(valuation.profitGrowthRate)}  accent={valuation.profitGrowthRate != null && valuation.profitGrowthRate >= 0 ? "text-green-400" : "text-red-400"} />
-            <ValKpi label="Business Growth Score" value={valuation.growthScore != null ? `${valuation.growthScore}/100` : "—"} accent={valuation.growthScore != null && valuation.growthScore >= 70 ? "text-green-400" : valuation.growthScore != null && valuation.growthScore >= 40 ? "text-amber-400" : "text-red-400"} />
+            <ValKpi label="Est. Company Value"  value={inr(valuation.estimatedValue)}    accent="text-green-700 dark:text-green-400" />
+            <ValKpi label="Enterprise Value"     value={inr(valuation.enterpriseValue)}   accent="text-blue-700 dark:text-blue-400" />
+            <ValKpi label="Shareholder Equity"   value={inr(valuation.shareholderEquity)} accent="text-purple-700 dark:text-purple-400" />
+            <ValKpi label="Net Asset Value"      value={inr(valuation.nav)}               accent="text-amber-700 dark:text-amber-400" />
+            <ValKpi label="Revenue Growth"       value={pct(valuation.revenueGrowthRate)} accent={valuation.revenueGrowthRate != null && valuation.revenueGrowthRate >= 0 ? "text-green-700 dark:text-green-400" : "text-red-700 dark:text-red-400"} />
+            <ValKpi label="Profit Growth"        value={pct(valuation.profitGrowthRate)}  accent={valuation.profitGrowthRate != null && valuation.profitGrowthRate >= 0 ? "text-green-700 dark:text-green-400" : "text-red-700 dark:text-red-400"} />
+            <ValKpi label="Business Growth Score" value={valuation.growthScore != null ? `${valuation.growthScore}/100` : "—"} accent={valuation.growthScore != null && valuation.growthScore >= 70 ? "text-green-700 dark:text-green-400" : valuation.growthScore != null && valuation.growthScore >= 40 ? "text-amber-700 dark:text-amber-400" : "text-red-700 dark:text-red-400"} />
             <div className="rounded-lg border p-3 bg-card">
               <div className="text-xs text-muted-foreground mb-1.5">Health Trend</div>
               {valuation.healthTrend ? (
@@ -361,7 +354,7 @@ function AiValuationPanel({ companyId }: { companyId: string }) {
                 ))}
                 <div className="flex items-center justify-between px-4 py-3 text-sm bg-muted/20">
                   <span className="font-bold">Weighted Average (Final)</span>
-                  <span className="font-extrabold text-green-400 text-base">{inr(valuation.estimatedValue)}</span>
+                  <span className="font-extrabold text-green-700 dark:text-green-400 text-base">{inr(valuation.estimatedValue)}</span>
                 </div>
               </div>
             </div>
@@ -376,19 +369,19 @@ function AiValuationPanel({ companyId }: { companyId: string }) {
               <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0">
                 <div className="p-3 text-center">
                   <div className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">Book Value / Share</div>
-                  <div className="font-bold text-purple-400">{valuation.bookValuePerShare != null && valuation.bookValuePerShare > 0 ? inr(valuation.bookValuePerShare) : "—"}</div>
+                  <div className="font-bold text-purple-700 dark:text-purple-400">{valuation.bookValuePerShare != null && valuation.bookValuePerShare > 0 ? inr(valuation.bookValuePerShare) : "—"}</div>
                 </div>
                 <div className="p-3 text-center">
                   <div className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">Est. Fair Value / Share</div>
-                  <div className="font-bold text-green-400">{valuation.estimatedSharePrice != null && valuation.estimatedSharePrice > 0 ? inr(valuation.estimatedSharePrice) : "—"}</div>
+                  <div className="font-bold text-green-700 dark:text-green-400">{valuation.estimatedSharePrice != null && valuation.estimatedSharePrice > 0 ? inr(valuation.estimatedSharePrice) : "—"}</div>
                 </div>
                 <div className="p-3 text-center">
                   <div className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">Equity / Share</div>
-                  <div className="font-bold text-blue-400">{valuation.shareholderEquity != null && valuation.estimatedSharePrice != null && valuation.estimatedSharePrice > 0 ? inr(valuation.shareholderEquity / (valuation.estimatedValue! / valuation.estimatedSharePrice!)) : "—"}</div>
+                  <div className="font-bold text-blue-700 dark:text-blue-400">{valuation.shareholderEquity != null && valuation.estimatedSharePrice != null && valuation.estimatedSharePrice > 0 ? inr(valuation.shareholderEquity / (valuation.estimatedValue! / valuation.estimatedSharePrice!)) : "—"}</div>
                 </div>
                 <div className="p-3 text-center">
                   <div className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">Growth Score</div>
-                  <div className={cn("font-bold", valuation.growthScore != null && valuation.growthScore >= 70 ? "text-green-400" : "text-amber-400")}>
+                  <div className={cn("font-bold", valuation.growthScore != null && valuation.growthScore >= 70 ? "text-green-700 dark:text-green-400" : "text-amber-700 dark:text-amber-400")}>
                     {valuation.growthScore != null ? `${valuation.growthScore}/100` : "—"}
                   </div>
                 </div>
@@ -446,7 +439,7 @@ function AiValuationPanel({ companyId }: { companyId: string }) {
                       </div>
                       <div>
                         <div className="text-xs text-muted-foreground">Est. Share Value</div>
-                        <div className="font-semibold text-green-400">{inr(sh.estimatedShareValue)}</div>
+                        <div className="font-semibold text-green-700 dark:text-green-400">{inr(sh.estimatedShareValue)}</div>
                       </div>
                       <div>
                         <div className="text-xs text-muted-foreground">Capital Invested</div>
@@ -454,7 +447,7 @@ function AiValuationPanel({ companyId }: { companyId: string }) {
                       </div>
                       <div>
                         <div className="text-xs text-muted-foreground">ROI Estimate</div>
-                        <div className={cn("font-semibold", sh.roiEstimate != null && sh.roiEstimate >= 0 ? "text-green-400" : "text-red-400")}>
+                        <div className={cn("font-semibold", sh.roiEstimate != null && sh.roiEstimate >= 0 ? "text-green-700 dark:text-green-400" : "text-red-700 dark:text-red-400")}>
                           {sh.roiEstimate != null ? pct(sh.roiEstimate) : "—"}
                         </div>
                         <div className="text-[10px] text-muted-foreground mt-0.5 truncate" title={sh.roiExplanation}>{sh.roiExplanation}</div>
@@ -515,7 +508,7 @@ function AdminShareholdersView() {
   })
 
   const listKey = ["/api/shareholders", companyId]
-  const { data: holders, isLoading } = useQuery<Shareholder[]>({
+  const { data: holders, isLoading, isError, refetch } = useQuery<Shareholder[]>({
     queryKey: listKey,
     queryFn: () => adminApi.get(`/shareholders?companyId=${companyId}`),
     enabled: !!companyId,
@@ -571,13 +564,21 @@ function AdminShareholdersView() {
       id: h.id, companyId: String(h.companyId), name: h.name, email: h.email ?? "", type: h.type, role: h.role,
       shares: String(h.shares), sharePrice: String(h.sharePrice), investmentAmount: String(h.investmentAmount),
       status: h.status, joinedDate: h.joinedDate ?? "", notes: h.notes ?? "",
+      holderCompanyId: h.holderCompanyId != null ? String(h.holderCompanyId) : "",
     })
     setShowForm(true)
   }
 
+  // Companies this cap table's holder can represent instead of an outside
+  // individual/entity — only the parent, and never the company whose own cap
+  // table is being edited (a company can't hold shares in itself).
+  const linkableCompanies = (companies ?? []).filter((c) => c.type === "parent" && String(c.id) !== form.companyId)
+  const isCompanyHolder = form.holderCompanyId !== ""
+
   function submit() {
-    if (!form.name.trim()) { toast({ title: "Name is required", variant: "destructive" }); return }
+    if (!isCompanyHolder && !form.name.trim()) { toast({ title: "Name is required", variant: "destructive" }); return }
     if (!form.companyId) { toast({ title: "Pick a company", variant: "destructive" }); return }
+    if (isCompanyHolder && !form.holderCompanyId) { toast({ title: "Pick which company holds this stake", variant: "destructive" }); return }
     const body: Record<string, unknown> = {
       name: form.name.trim(),
       email: form.email.trim() || null,
@@ -589,10 +590,90 @@ function AdminShareholdersView() {
       status: form.status,
       joinedDate: form.joinedDate || null,
       notes: form.notes.trim() || null,
+      holderCompanyId: isCompanyHolder ? Number(form.holderCompanyId) : null,
     }
     if (!form.id) body.companyId = Number(form.companyId)
     save.mutate(body)
   }
+
+  const capColumns: ResponsiveTableColumn<Shareholder>[] = [
+    {
+      key: "name", header: "Shareholder", card: "title",
+      cell: (h) => (
+        <div>
+          <div className="font-medium">{h.name}</div>
+          {h.email && <div className="text-xs text-muted-foreground">{h.email}</div>}
+        </div>
+      ),
+      cardCell: (h) => h.name,
+    },
+    { key: "role", header: "Role", card: "subtitle", cell: (h) => <Badge variant="outline" className={ROLE_STYLES[h.role] ?? ""}>{ROLE_LABELS[h.role] ?? h.role}</Badge> },
+    { key: "shares", header: "Shares", headClassName: "text-right", cellClassName: "text-right", cell: (h) => num(h.shares) },
+    { key: "ownershipPercent", header: "Ownership", headClassName: "text-right", cellClassName: "text-right", cell: (h) => <span className="font-semibold">{h.ownershipPercent.toFixed(2)}%</span> },
+    { key: "investmentAmount", header: "Invested", headClassName: "text-right", cellClassName: "text-right", cell: (h) => <span className="text-muted-foreground">{inr(h.investmentAmount)}</span> },
+    {
+      key: "equityValue", header: "Equity Value", headClassName: "text-right", cellClassName: "text-right",
+      cell: (h) => cap && cap.totalShares > 0 ? inr((h.shares / cap.totalShares) * cap.valuation) : "—",
+    },
+    {
+      key: "sharePremium", header: "Share Premium", headClassName: "text-right", cellClassName: "text-right",
+      cell: (h) => <span className="text-muted-foreground">{h.investmentAmount > 0 && h.sharePrice > 0 ? inr(h.investmentAmount - h.shares * h.sharePrice) : "—"}</span>,
+    },
+    ...(aiValuation ? [
+      {
+        key: "bookValue", header: "Book Value", headClassName: "text-right", cellClassName: "text-right",
+        cell: (h: Shareholder) => aiValuation!.bookValuePerShare ? inr(h.shares * aiValuation!.bookValuePerShare) : "—",
+      },
+      {
+        key: "estMktVal", header: "Est. Mkt Val", headClassName: "text-right", cellClassName: "text-right",
+        cell: (h: Shareholder) => (
+          <span className={aiValuation!.estimatedSharePrice && h.investmentAmount > 0 ? (h.shares * aiValuation!.estimatedSharePrice! > h.investmentAmount ? "text-green-700 dark:text-green-400" : "text-red-700 dark:text-red-400") : ""}>
+            {aiValuation!.estimatedSharePrice ? inr(h.shares * aiValuation!.estimatedSharePrice!) : "—"}
+          </span>
+        ),
+      },
+    ] as ResponsiveTableColumn<Shareholder>[] : []),
+    {
+      key: "status", header: "Status", card: "badge",
+      cell: (h) => (
+        <Badge variant="outline" className={h.status === "active" ? "bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20" : "bg-muted text-muted-foreground"}>
+          {h.status === "active" ? "Active" : "Exited"}
+        </Badge>
+      ),
+    },
+  ]
+
+  const capActions: ResponsiveTableAction<Shareholder>[] = [
+    {
+      label: "Download certificate", icon: FileDown,
+      onClick: (h) => setCertData({
+        id: h.id,
+        holderName: h.name,
+        companyName: h.companyName,
+        shares: h.shares,
+        sharePrice: h.sharePrice,
+        investmentAmount: h.investmentAmount,
+        // AI estimated price preferred; fall back to cap-table derived price
+        estimatedSharePrice: aiValuation?.estimatedSharePrice ?? (cap && cap.totalShares > 0 ? cap.valuation / cap.totalShares : undefined),
+        bookValuePerShare: aiValuation?.bookValuePerShare ?? undefined,
+        shareType: SHARE_TYPE_LABELS[h.role] ?? "EQUITY SHARES",
+        ownershipPercent: h.ownershipPercent,
+        joinedDate: h.joinedDate,
+      }),
+    },
+    ...(canManage ? [
+      {
+        label: "Send invite", icon: Send,
+        onClick: (h: Shareholder) => invite.mutate(h.id),
+        disabled: (h: Shareholder) => !h.email || (invite.isPending && invite.variables === h.id),
+      },
+      { label: "Edit", icon: Pencil, onClick: openEdit },
+      {
+        label: "Delete", icon: Trash2, destructive: true,
+        onClick: (h: Shareholder) => { if (confirm(`Remove ${h.name}?`)) remove.mutate(h.id) },
+      },
+    ] as ResponsiveTableAction<Shareholder>[] : []),
+  ]
 
   return (
     <div className="space-y-6">
@@ -616,10 +697,10 @@ function AdminShareholdersView() {
 
       {/* Cap table summary */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <SummaryCard icon={TrendingUp} label="Company Valuation" value={cap ? inr(cap.valuation) : "—"} loading={capLoading} accent="text-green-400" />
-        <SummaryCard icon={PieChart} label="Total Shares Issued" value={cap ? num(cap.totalShares) : "—"} loading={capLoading} accent="text-blue-400" />
-        <SummaryCard icon={Wallet} label="Total Invested" value={cap ? inr(cap.totalInvested) : "—"} loading={capLoading} accent="text-amber-400" />
-        <SummaryCard icon={Users} label="Shareholders" value={cap ? num(cap.shareholderCount) : "—"} loading={capLoading} accent="text-purple-400" />
+        <SummaryCard icon={TrendingUp} label="Company Valuation" value={cap ? inr(cap.valuation) : "—"} loading={capLoading} accent="text-green-700 dark:text-green-400" />
+        <SummaryCard icon={PieChart} label="Total Shares Issued" value={cap ? num(cap.totalShares) : "—"} loading={capLoading} accent="text-blue-700 dark:text-blue-400" />
+        <SummaryCard icon={Wallet} label="Total Invested" value={cap ? inr(cap.totalInvested) : "—"} loading={capLoading} accent="text-amber-700 dark:text-amber-400" />
+        <SummaryCard icon={Users} label="Shareholders" value={cap ? num(cap.shareholderCount) : "—"} loading={capLoading} accent="text-purple-700 dark:text-purple-400" />
       </div>
 
       <Card>
@@ -627,99 +708,25 @@ function AdminShareholdersView() {
           <CardTitle className="text-base">Cap Table</CardTitle>
           <CardDescription>Ownership breakdown{cap ? ` — share price ${inr(cap.pricePerShare)}` : ""}.</CardDescription>
         </CardHeader>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Shareholder</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead className="text-right">Shares</TableHead>
-                <TableHead className="text-right">Ownership</TableHead>
-                <TableHead className="text-right">Invested</TableHead>
-                <TableHead className="text-right">Equity Value</TableHead>
-                <TableHead className="text-right">Share Premium</TableHead>
-                {aiValuation && <TableHead className="text-right">Book Value</TableHead>}
-                {aiValuation && <TableHead className="text-right">Est. Mkt Val</TableHead>}
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Certificate</TableHead>
-                {canManage && <TableHead className="text-right">Actions</TableHead>}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {isLoading ? (
-                Array.from({ length: 4 }).map((_, i) => (
-                  <TableRow key={i}><TableCell colSpan={canManage ? 9 : 8}><Skeleton className="h-6 w-full" /></TableCell></TableRow>
-                ))
-              ) : !holders || holders.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={canManage ? 9 : 8} className="py-12 text-center text-muted-foreground">
-                    <PieChart className="mx-auto mb-2 h-8 w-8 opacity-40" />
-                    No shareholders recorded for this company yet.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                holders.map((h) => (
-                  <TableRow key={h.id} className="cursor-pointer" onClick={() => { setDetailId(h.id); setTxForm(emptyTxForm()) }}>
-                    <TableCell>
-                      <div className="font-medium">{h.name}</div>
-                      {h.email && <div className="text-xs text-muted-foreground">{h.email}</div>}
-                    </TableCell>
-                    <TableCell><Badge variant="outline" className={ROLE_STYLES[h.role] ?? ""}>{ROLE_LABELS[h.role] ?? h.role}</Badge></TableCell>
-                    <TableCell className="text-right">{num(h.shares)}</TableCell>
-                    <TableCell className="text-right font-semibold">{h.ownershipPercent.toFixed(2)}%</TableCell>
-                    <TableCell className="text-right text-muted-foreground">{inr(h.investmentAmount)}</TableCell>
-                    <TableCell className="text-right">{cap && cap.totalShares > 0 ? inr((h.shares / cap.totalShares) * cap.valuation) : "—"}</TableCell>
-                    <TableCell className="text-right text-muted-foreground">
-                      {h.investmentAmount > 0 && h.sharePrice > 0 ? inr(h.investmentAmount - h.shares * h.sharePrice) : "—"}
-                    </TableCell>
-                    {aiValuation && <TableCell className="text-right">{aiValuation.bookValuePerShare ? inr(h.shares * aiValuation.bookValuePerShare) : "—"}</TableCell>}
-                    {aiValuation && <TableCell className={`text-right ${aiValuation.estimatedSharePrice && h.investmentAmount > 0 ? (h.shares * aiValuation.estimatedSharePrice > h.investmentAmount ? "text-green-400" : "text-red-400") : ""}`}>{aiValuation.estimatedSharePrice ? inr(h.shares * aiValuation.estimatedSharePrice) : "—"}</TableCell>}
-                    <TableCell>
-                      <Badge variant="outline" className={h.status === "active" ? "bg-green-500/10 text-green-400 border-green-500/20" : "bg-muted text-muted-foreground"}>
-                        {h.status === "active" ? "Active" : "Exited"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                      <Button
-                        variant="ghost" size="icon"
-                        title="Download share certificate PDF"
-                        onClick={() => setCertData({
-                          id: h.id,
-                          holderName: h.name,
-                          companyName: h.companyName,
-                          shares: h.shares,
-                          sharePrice: h.sharePrice,
-                          investmentAmount: h.investmentAmount,
-                          // AI estimated price preferred; fall back to cap-table derived price
-                          estimatedSharePrice: aiValuation?.estimatedSharePrice ?? (cap && cap.totalShares > 0 ? cap.valuation / cap.totalShares : undefined),
-                          bookValuePerShare: aiValuation?.bookValuePerShare ?? undefined,
-                          shareType: SHARE_TYPE_LABELS[h.role] ?? "EQUITY SHARES",
-                          ownershipPercent: h.ownershipPercent,
-                          joinedDate: h.joinedDate,
-                        })}
-                      >
-                        <FileDown className="h-4 w-4 text-blue-400" />
-                      </Button>
-                    </TableCell>
-                    {canManage && (
-                      <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                        <Button
-                          variant="ghost" size="icon"
-                          title={h.email ? (h.invitedAt ? `Invited ${new Date(h.invitedAt).toLocaleDateString("en-IN")} — resend` : "Send invite email") : "Add an email address to invite"}
-                          disabled={!h.email || (invite.isPending && invite.variables === h.id)}
-                          onClick={() => invite.mutate(h.id)}
-                        >
-                          <Send className={`h-4 w-4 ${h.invitedAt ? "text-green-400" : ""}`} />
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => openEdit(h)}><Pencil className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" onClick={() => { if (confirm(`Remove ${h.name}?`)) remove.mutate(h.id) }}><Trash2 className="h-4 w-4 text-red-400" /></Button>
-                      </TableCell>
-                    )}
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
+        <CardContent className="p-3 md:p-0">
+          <QueryState
+            isLoading={isLoading}
+            isError={isError}
+            isEmpty={!holders || holders.length === 0}
+            onRetry={refetch}
+            errorMessage="Could not load shareholders."
+            emptyMessage="No shareholders recorded for this company yet."
+            emptyIcon={PieChart}
+            loading={<ResponsiveTable columns={capColumns} data={[]} rowKey={(h) => h.id} isLoading skeletonCount={4} actions={capActions} />}
+          >
+            <ResponsiveTable
+              columns={capColumns}
+              data={holders ?? []}
+              rowKey={(h) => h.id}
+              actions={capActions}
+              onRowClick={(h) => { setDetailId(h.id); setTxForm(emptyTxForm()) }}
+            />
+          </QueryState>
         </CardContent>
       </Card>
 
@@ -737,33 +744,68 @@ function AdminShareholdersView() {
             {!form.id && (
               <div className="space-y-1.5">
                 <Label>Company</Label>
-                <Select value={form.companyId} onValueChange={(v) => setForm({ ...form, companyId: v })}>
+                <Select value={form.companyId} onValueChange={(v) => setForm({ ...form, companyId: v, holderCompanyId: "" })}>
                   <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
                   <SelectContent>{(companies ?? []).map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}</SelectContent>
                 </Select>
+                <p className="text-xs text-muted-foreground">This is the company whose cap table the holder appears in.</p>
+              </div>
+            )}
+            {linkableCompanies.length > 0 && (
+              <label className="flex items-center gap-2 text-sm rounded-md border p-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isCompanyHolder}
+                  onChange={(e) => setForm({
+                    ...form,
+                    holderCompanyId: e.target.checked ? String(linkableCompanies[0].id) : "",
+                    name: e.target.checked ? linkableCompanies[0].name : form.name,
+                    type: e.target.checked ? "entity" : form.type,
+                  })}
+                  className="h-4 w-4"
+                />
+                <span>This holder is one of our tracked companies (e.g. the parent's own stake)</span>
+              </label>
+            )}
+            {isCompanyHolder ? (
+              <div className="space-y-1.5">
+                <Label>Holding company</Label>
+                <Select
+                  value={form.holderCompanyId}
+                  onValueChange={(v) => setForm({ ...form, holderCompanyId: v, name: linkableCompanies.find((c) => String(c.id) === v)?.name ?? form.name, type: "entity" })}
+                >
+                  <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                  <SelectContent>{linkableCompanies.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}</SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Ownership % here will automatically drive this company&apos;s parent-ownership figure across the app.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Name</Label>
+                  <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Full name" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Email</Label>
+                  <Input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="name@email.com" />
+                </div>
               </div>
             )}
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Name</Label>
-                <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Full name" />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Email</Label>
-                <Input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="name@email.com" />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Holder type</Label>
-                <Select value={form.type} onValueChange={(v) => setForm({ ...form, type: v })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="individual">Individual</SelectItem>
-                    <SelectItem value="entity">Entity / Company</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              {!isCompanyHolder && (
+                <div className="space-y-1.5">
+                  <Label>Holder type</Label>
+                  <Select value={form.type} onValueChange={(v) => setForm({ ...form, type: v })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="individual">Individual</SelectItem>
+                      <SelectItem value="entity">Entity / Company</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <div className="space-y-1.5">
                 <Label>Role</Label>
                 <Select value={form.role} onValueChange={(v) => setForm({ ...form, role: v })}>
@@ -774,7 +816,7 @@ function AdminShareholdersView() {
                 </Select>
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="space-y-1.5">
                 <Label>Shares</Label>
                 <Input type="number" min="0" value={form.shares} onChange={(e) => setForm({ ...form, shares: e.target.value })} placeholder="0" />
@@ -909,7 +951,7 @@ function ShareholderDetail({ id, onClose, canManage, txForm, setTxForm, onChange
           <Skeleton className="h-40 w-full" />
         ) : (
           <div className="space-y-4">
-            <div className="grid grid-cols-3 gap-3 text-sm">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
               <Stat label="Shares" value={num(data.shares)} />
               <Stat label="Price / share" value={inr(data.sharePrice)} />
               <Stat label="Total invested" value={inr(data.investmentAmount)} />
@@ -940,29 +982,21 @@ function ShareholderDetail({ id, onClose, canManage, txForm, setTxForm, onChange
               {data.history.length === 0 ? (
                 <p className="py-6 text-center text-sm text-muted-foreground">No transactions recorded yet.</p>
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Date</TableHead><TableHead>Type</TableHead>
-                      <TableHead className="text-right">Shares</TableHead>
-                      <TableHead className="text-right">₹/share</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
-                      <TableHead>Note</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {data.history.map((t) => (
-                      <TableRow key={t.id}>
-                        <TableCell className="text-muted-foreground">{new Date(t.date).toLocaleDateString("en-IN")}</TableCell>
-                        <TableCell>{TX_LABELS[t.type] ?? t.type}</TableCell>
-                        <TableCell className={`text-right ${t.shares < 0 ? "text-red-400" : ""}`}>{t.shares > 0 ? "+" : ""}{num(t.shares)}</TableCell>
-                        <TableCell className="text-right">{inr(t.pricePerShare)}</TableCell>
-                        <TableCell className="text-right">{inr(t.amount)}</TableCell>
-                        <TableCell className="max-w-[160px] truncate text-muted-foreground">{t.note ?? "—"}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                <ResponsiveTable
+                  columns={[
+                    { key: "type", header: "Type", card: "title", cell: (t) => TX_LABELS[t.type] ?? t.type },
+                    { key: "date", header: "Date", card: "subtitle", cell: (t) => new Date(t.date).toLocaleDateString("en-IN") },
+                    {
+                      key: "shares", header: "Shares", headClassName: "text-right", cellClassName: "text-right",
+                      cell: (t) => <span className={t.shares < 0 ? "text-red-700 dark:text-red-400" : ""}>{t.shares > 0 ? "+" : ""}{num(t.shares)}</span>,
+                    },
+                    { key: "pricePerShare", header: "₹/share", headClassName: "text-right", cellClassName: "text-right", cell: (t) => inr(t.pricePerShare) },
+                    { key: "amount", header: "Amount", headClassName: "text-right", cellClassName: "text-right", cell: (t) => inr(t.amount) },
+                    { key: "note", header: "Note", cell: (t) => <span className="max-w-[160px] truncate block text-muted-foreground">{t.note ?? "—"}</span> },
+                  ]}
+                  data={data.history}
+                  rowKey={(t) => t.id}
+                />
               )}
             </div>
           </div>

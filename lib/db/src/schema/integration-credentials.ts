@@ -1,4 +1,5 @@
-import { pgTable, serial, text, integer, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { serial, text, integer, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { tbosSchema } from "./_pg-schema";
 
 /**
  * Encrypted API credentials entered directly in the TapasHub UI.
@@ -6,7 +7,7 @@ import { pgTable, serial, text, integer, timestamp, uniqueIndex } from "drizzle-
  * `envName` is the canonical env var name (e.g. INTEGRATION_SHOPIFY_1_ADMIN_API_TOKEN)
  * so resolveSecrets() can overlay DB values on top of env vars uniformly.
  */
-export const integrationCredentialsTable = pgTable("integration_credentials", {
+export const integrationCredentialsTable = tbosSchema.table("integration_credentials", {
   id: serial("id").primaryKey(),
   connectionId: integer("connection_id").notNull(),
   companyId: integer("company_id").notNull(),

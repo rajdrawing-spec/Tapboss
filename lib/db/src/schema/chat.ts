@@ -1,9 +1,10 @@
-import { pgTable, serial, integer, text, timestamp, jsonb, boolean, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { serial, integer, text, timestamp, jsonb, boolean, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { tbosSchema } from "./_pg-schema";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
 // ── chat_channels: rooms scoped to a company ─────────────────────────────────
-export const chatChannelsTable = pgTable(
+export const chatChannelsTable = tbosSchema.table(
   "chat_channels",
   {
     id: serial("id").primaryKey(),
@@ -29,7 +30,7 @@ export type ChatChannel = typeof chatChannelsTable.$inferSelect;
 export type NewChatChannel = typeof chatChannelsTable.$inferInsert;
 
 // ── chat_channel_members: membership + last read watermark ────────────────────
-export const chatChannelMembersTable = pgTable(
+export const chatChannelMembersTable = tbosSchema.table(
   "chat_channel_members",
   {
     id: serial("id").primaryKey(),
@@ -48,7 +49,7 @@ export type ChatChannelMember = typeof chatChannelMembersTable.$inferSelect;
 export type NewChatChannelMember = typeof chatChannelMembersTable.$inferInsert;
 
 // ── chat_messages: messages, reactions, attachments, mentions, pins ───────────
-export const chatMessagesTable = pgTable(
+export const chatMessagesTable = tbosSchema.table(
   "chat_messages",
   {
     id: serial("id").primaryKey(),
@@ -75,7 +76,7 @@ export type ChatMessage = typeof chatMessagesTable.$inferSelect;
 export type NewChatMessage = typeof chatMessagesTable.$inferInsert;
 
 // ── chat_message_reads: per-user read receipts ───────────────────────────────
-export const chatMessageReadsTable = pgTable(
+export const chatMessageReadsTable = tbosSchema.table(
   "chat_message_reads",
   {
     id: serial("id").primaryKey(),

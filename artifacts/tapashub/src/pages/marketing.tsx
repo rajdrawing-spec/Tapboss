@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Progress } from "@/components/ui/progress"
+import { ResponsiveTable, type ResponsiveTableColumn } from "@/components/responsive-table"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useUpload } from "@workspace/object-storage-web"
@@ -50,23 +51,23 @@ const LEAD_STATUSES = ["new", "contacted", "qualified", "converted", "lost"]
 
 const STATUS_COLORS: Record<string, string> = {
   draft: "bg-muted text-muted-foreground",
-  active: "bg-green-500/10 text-green-400 border-green-500/20",
-  paused: "bg-yellow-500/10 text-yellow-400 border-yellow-500/20",
-  completed: "bg-blue-500/10 text-blue-400 border-blue-500/20",
-  approved: "bg-green-500/10 text-green-400 border-green-500/20",
+  active: "bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20",
+  paused: "bg-yellow-500/10 text-yellow-700 dark:text-yellow-400 border-yellow-500/20",
+  completed: "bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20",
+  approved: "bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20",
   live: "bg-primary/10 text-primary border-primary/20",
   archived: "bg-muted text-muted-foreground",
-  new: "bg-blue-500/10 text-blue-400 border-blue-500/20",
-  contacted: "bg-amber-500/10 text-amber-400 border-amber-500/20",
-  qualified: "bg-purple-500/10 text-purple-400 border-purple-500/20",
-  converted: "bg-green-500/10 text-green-400 border-green-500/20",
-  lost: "bg-red-500/10 text-red-400 border-red-500/20",
+  new: "bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20",
+  contacted: "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20",
+  qualified: "bg-purple-500/10 text-purple-700 dark:text-purple-400 border-purple-500/20",
+  converted: "bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20",
+  lost: "bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/20",
 }
 const CHANNEL_COLORS: Record<string, string> = {
-  meta: "bg-blue-600/10 text-blue-400", google: "bg-red-500/10 text-red-400",
-  instagram: "bg-pink-500/10 text-pink-400", facebook: "bg-indigo-500/10 text-indigo-400",
-  whatsapp: "bg-green-500/10 text-green-400", email: "bg-amber-500/10 text-amber-400",
-  referral: "bg-teal-500/10 text-teal-400", other: "bg-muted text-muted-foreground",
+  meta: "bg-blue-600/10 text-blue-700 dark:text-blue-400", google: "bg-red-500/10 text-red-700 dark:text-red-400",
+  instagram: "bg-pink-500/10 text-pink-700 dark:text-pink-400", facebook: "bg-indigo-500/10 text-indigo-700 dark:text-indigo-400",
+  whatsapp: "bg-green-500/10 text-green-700 dark:text-green-400", email: "bg-amber-500/10 text-amber-700 dark:text-amber-400",
+  referral: "bg-teal-500/10 text-teal-700 dark:text-teal-400", other: "bg-muted text-muted-foreground",
 }
 const CREATIVE_TYPE_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
   image: ImageIcon, video: Film, copy: FileText, carousel: LayoutGrid,
@@ -74,6 +75,24 @@ const CREATIVE_TYPE_ICON: Record<string, React.ComponentType<{ className?: strin
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 const fmtINR = (n: number) => "₹" + Math.round(n).toLocaleString("en-IN")
 const fmtROI = (roi: number | null) => (roi == null ? "—" : `${(roi * 100).toFixed(0)}%`)
+
+const campaignRoiColumns: ResponsiveTableColumn<PerfCampaign>[] = [
+  { key: "name", header: "Campaign", card: "title", cell: (c) => <span className="font-medium">{c.name}</span> },
+  {
+    key: "channel", header: "Channel", card: "subtitle",
+    cell: (c) => <span className={`text-[10px] font-semibold px-2 py-0.5 rounded uppercase ${CHANNEL_COLORS[c.channel] || "bg-muted"}`}>{c.channel}</span>,
+  },
+  { key: "spent", header: "Spent", cellClassName: "text-right", headClassName: "text-right", cell: (c) => fmtINR(c.spent) },
+  { key: "revenue", header: "Revenue", cellClassName: "text-right", headClassName: "text-right", cell: (c) => <span className="text-green-700 dark:text-green-400">{fmtINR(c.revenue)}</span> },
+  {
+    key: "roi", header: "ROI", cellClassName: "text-right", headClassName: "text-right",
+    cell: (c) => (
+      <span className={`font-semibold ${c.roi == null ? "text-muted-foreground" : c.roi >= 0 ? "text-green-700 dark:text-green-400" : "text-red-700 dark:text-red-400"}`}>
+        {fmtROI(c.roi)}
+      </span>
+    ),
+  },
+]
 
 // Assets stored via object storage return an /objects path served by the storage API.
 function assetSrc(url?: string | null): string | undefined {
@@ -139,10 +158,10 @@ function PerformanceTab() {
 
   const t = perf.totals
   const stats = [
-    { l: "Budget", v: fmtINR(t.budget), sub: `${t.campaignCount} campaigns`, icon: IndianRupee, c: "text-blue-400" },
-    { l: "Ad Spend", v: fmtINR(t.spent), sub: t.budget > 0 ? `${Math.round((t.spent / t.budget) * 100)}% of budget` : "—", icon: TrendingUp, c: "text-orange-400" },
-    { l: "Revenue", v: fmtINR(t.revenue), sub: `ROI ${fmtROI(t.roi)}`, icon: IndianRupee, c: "text-green-400" },
-    { l: "Conversions", v: t.conversions.toLocaleString("en-IN"), sub: `${t.leads.toLocaleString("en-IN")} leads`, icon: Users, c: "text-purple-400" },
+    { l: "Budget", v: fmtINR(t.budget), sub: `${t.campaignCount} campaigns`, icon: IndianRupee, c: "text-blue-700 dark:text-blue-400" },
+    { l: "Ad Spend", v: fmtINR(t.spent), sub: t.budget > 0 ? `${Math.round((t.spent / t.budget) * 100)}% of budget` : "—", icon: TrendingUp, c: "text-orange-700 dark:text-orange-400" },
+    { l: "Revenue", v: fmtINR(t.revenue), sub: `ROI ${fmtROI(t.roi)}`, icon: IndianRupee, c: "text-green-700 dark:text-green-400" },
+    { l: "Conversions", v: t.conversions.toLocaleString("en-IN"), sub: `${t.leads.toLocaleString("en-IN")} leads`, icon: Users, c: "text-purple-700 dark:text-purple-400" },
   ]
   const maxSpent = Math.max(...perf.channels.map((c) => c.spent), 1)
 
@@ -171,7 +190,7 @@ function PerformanceTab() {
                   <div className="flex items-center gap-4 text-xs text-muted-foreground">
                     <span>Spend {fmtINR(ch.spent)}</span>
                     <span>Rev {fmtINR(ch.revenue)}</span>
-                    <span className={ch.roi == null ? "" : ch.roi >= 0 ? "text-green-400" : "text-red-400"}>ROI {fmtROI(ch.roi)}</span>
+                    <span className={ch.roi == null ? "" : ch.roi >= 0 ? "text-green-700 dark:text-green-400" : "text-red-700 dark:text-red-400"}>ROI {fmtROI(ch.roi)}</span>
                   </div>
                 </div>
                 <div className="h-2 rounded bg-muted overflow-hidden">
@@ -185,28 +204,7 @@ function PerformanceTab() {
 
       <Card><CardContent className="p-5">
         <h3 className="font-semibold mb-4 flex items-center gap-2"><TrendingUp className="w-4 h-4 text-primary" /> Campaign ROI</h3>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead><tr className="text-left text-xs text-muted-foreground border-b">
-              <th className="py-2 pr-4 font-medium">Campaign</th>
-              <th className="py-2 px-4 font-medium">Channel</th>
-              <th className="py-2 px-4 font-medium text-right">Spent</th>
-              <th className="py-2 px-4 font-medium text-right">Revenue</th>
-              <th className="py-2 pl-4 font-medium text-right">ROI</th>
-            </tr></thead>
-            <tbody>
-              {perf.campaigns.map((c) => (
-                <tr key={c.id} className="border-b border-border/50">
-                  <td className="py-2 pr-4 font-medium">{c.name}</td>
-                  <td className="py-2 px-4"><span className={`text-[10px] font-semibold px-2 py-0.5 rounded uppercase ${CHANNEL_COLORS[c.channel] || "bg-muted"}`}>{c.channel}</span></td>
-                  <td className="py-2 px-4 text-right">{fmtINR(c.spent)}</td>
-                  <td className="py-2 px-4 text-right text-green-400">{fmtINR(c.revenue)}</td>
-                  <td className={`py-2 pl-4 text-right font-semibold ${c.roi == null ? "text-muted-foreground" : c.roi >= 0 ? "text-green-400" : "text-red-400"}`}>{fmtROI(c.roi)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <ResponsiveTable columns={campaignRoiColumns} data={perf.campaigns} rowKey={(c) => c.id} />
       </CardContent></Card>
     </div>
   )
@@ -313,16 +311,16 @@ function CampaignsTab() {
                     <Progress value={pct} className="h-1.5" />
                   </div>
 
-                  <div className="grid grid-cols-4 gap-2 text-center">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
                     <div><div className="text-sm font-bold">{c.leads}</div><div className="text-[10px] text-muted-foreground">Leads</div></div>
                     <div><div className="text-sm font-bold">{c.conversions}</div><div className="text-[10px] text-muted-foreground">Conv.</div></div>
-                    <div><div className="text-sm font-bold text-green-400">{fmtINR(c.revenue)}</div><div className="text-[10px] text-muted-foreground">Revenue</div></div>
-                    <div><div className={`text-sm font-bold ${roas >= 1 ? "text-green-400" : "text-red-400"}`}>{c.spent > 0 ? `${roas.toFixed(1)}x` : "—"}</div><div className="text-[10px] text-muted-foreground">ROAS</div></div>
+                    <div><div className="text-sm font-bold text-green-700 dark:text-green-400">{fmtINR(c.revenue)}</div><div className="text-[10px] text-muted-foreground">Revenue</div></div>
+                    <div><div className={`text-sm font-bold ${roas >= 1 ? "text-green-700 dark:text-green-400" : "text-red-700 dark:text-red-400"}`}>{c.spent > 0 ? `${roas.toFixed(1)}x` : "—"}</div><div className="text-[10px] text-muted-foreground">ROAS</div></div>
                   </div>
 
                   <div className="flex gap-2 pt-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <Button variant="outline" size="sm" className="flex-1" onClick={() => openEdit(c)}><Pencil className="w-3.5 h-3.5 mr-1" /> Edit</Button>
-                    <Button variant="outline" size="sm" className="text-red-400" onClick={() => del(c.id)}><Trash2 className="w-3.5 h-3.5" /></Button>
+                    <Button variant="outline" size="sm" className="text-red-700 dark:text-red-400" onClick={() => del(c.id)}><Trash2 className="w-3.5 h-3.5" /></Button>
                   </div>
                 </CardContent>
               </Card>
@@ -475,8 +473,8 @@ function CreativesTab() {
                   <div className="flex items-center gap-2 pt-1">
                     {c.url && <a href={assetSrc(c.url)} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline flex items-center gap-1"><ExternalLink className="w-3 h-3" /> View</a>}
                     <div className="ml-auto flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(c)}><Pencil className="w-3.5 h-3.5" /></Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-red-400" onClick={() => del(c.id)}><Trash2 className="w-3.5 h-3.5" /></Button>
+                      <Button variant="ghost" size="icon" className="w-9 h-9 md:w-7 md:h-7" onClick={() => openEdit(c)} aria-label="Edit"><Pencil className="w-3.5 h-3.5" /></Button>
+                      <Button variant="ghost" size="icon" className="w-9 h-9 md:w-7 md:h-7 text-red-700 dark:text-red-400" onClick={() => del(c.id)} aria-label="Delete"><Trash2 className="w-3.5 h-3.5" /></Button>
                     </div>
                   </div>
                 </CardContent>
@@ -597,9 +595,9 @@ function CalendarTab() {
       <div className="flex items-center justify-between">
         <h3 className="font-semibold">{cursor.toLocaleString("en-IN", { month: "long", year: "numeric" })}</h3>
         <div className="flex gap-2">
-          <Button variant="outline" size="icon" onClick={() => setCursor(new Date(year, month - 1, 1))}><ChevronLeft className="w-4 h-4" /></Button>
+          <Button variant="outline" size="icon" onClick={() => setCursor(new Date(year, month - 1, 1))} aria-label="Previous"><ChevronLeft className="w-4 h-4" /></Button>
           <Button variant="outline" size="sm" onClick={() => { const d = new Date(); setCursor(new Date(d.getFullYear(), d.getMonth(), 1)) }}>Today</Button>
-          <Button variant="outline" size="icon" onClick={() => setCursor(new Date(year, month + 1, 1))}><ChevronRight className="w-4 h-4" /></Button>
+          <Button variant="outline" size="icon" onClick={() => setCursor(new Date(year, month + 1, 1))} aria-label="Next"><ChevronRight className="w-4 h-4" /></Button>
         </div>
       </div>
 
@@ -754,8 +752,8 @@ function LeadsTab() {
                             {linked && <span className="text-[10px] text-muted-foreground truncate">{linked.name}</span>}
                           </div>
                           <div className="flex gap-1 pt-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openEdit(l)}><Pencil className="w-3 h-3" /></Button>
-                            <Button variant="ghost" size="icon" className="h-6 w-6 text-red-400" onClick={() => del(l.id)}><Trash2 className="w-3 h-3" /></Button>
+                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openEdit(l)} aria-label="Edit"><Pencil className="w-3 h-3" /></Button>
+                            <Button variant="ghost" size="icon" className="h-6 w-6 text-red-700 dark:text-red-400" onClick={() => del(l.id)} aria-label="Delete"><Trash2 className="w-3 h-3" /></Button>
                           </div>
                         </CardContent>
                       </Card>

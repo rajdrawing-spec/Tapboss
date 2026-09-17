@@ -1,4 +1,5 @@
-import { pgTable, serial, text, real, integer, timestamp, json } from "drizzle-orm/pg-core";
+import { serial, text, real, integer, timestamp, json } from "drizzle-orm/pg-core";
+import { tbosSchema } from "./_pg-schema";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -8,7 +9,7 @@ export interface RequiredApprover {
   role: string; // shareholder|director|admin|approver
 }
 
-export const approvalsTable = pgTable("approvals", {
+export const approvalsTable = tbosSchema.table("approvals", {
   id: serial("id").primaryKey(),
   companyId: integer("company_id").notNull(),
   type: text("type").notNull(), // payment|purchase|refund|hiring|salary|vendor|leave|expense|fund_allocation

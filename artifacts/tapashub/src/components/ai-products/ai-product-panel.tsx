@@ -366,7 +366,7 @@ export default function AiProductPanel({ product, onChange }: { product: Product
                 {metadata?.images?.length === 0 && <p className="text-xs text-muted-foreground">No images yet. Upload images in the product form.</p>}
               </div>
               {metadata?.images?.length > 0 && (
-                <div className="grid grid-cols-3 gap-2 items-end">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 items-end">
                   <div className="space-y-1"><Label className="text-xs">Width</Label><Input type="number" value={resizeWidth} onChange={e => setResizeWidth(parseInt(e.target.value) || 0)} /></div>
                   <div className="space-y-1"><Label className="text-xs">Height</Label><Input type="number" value={resizeHeight} onChange={e => setResizeHeight(parseInt(e.target.value) || 0)} /></div>
                   <div className="flex gap-2">
@@ -417,7 +417,7 @@ export default function AiProductPanel({ product, onChange }: { product: Product
               <div className="text-3xl font-bold">{healthScore}/100</div>
               <div className="flex">
                 {Array.from({ length: 5 }).map((_, i) => (
-                  <Star key={i} className={`w-5 h-5 ${i < stars ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground"}`} />
+                  <Star key={i} className={`w-5 h-5 ${i < stars ? "fill-yellow-400 text-yellow-700 dark:text-yellow-400" : "text-muted-foreground"}`} />
                 ))}
               </div>
               <Button onClick={computeHealth} disabled={loading === "health"}><ScanLine className="w-4 h-4 mr-1" /> Recompute</Button>
@@ -440,7 +440,7 @@ export default function AiProductPanel({ product, onChange }: { product: Product
                 { label: "Variants", ok: (metadata?.variants?.length || 0) > 0 },
               ].map(item => (
                 <div key={item.label} className="flex items-center gap-2">
-                  {item.ok ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : <XCircle className="w-4 h-4 text-red-400" />}
+                  {item.ok ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : <XCircle className="w-4 h-4 text-red-700 dark:text-red-400" />}
                   {item.label}
                 </div>
               ))}

@@ -958,6 +958,12 @@ export async function applyMigrations(): Promise<void> {
     await db.execute(sql`DROP INDEX IF EXISTS campaigns_company_external_uniq`);
     await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS campaigns_company_channel_external_uniq ON campaigns(company_id, channel, external_id) WHERE external_id IS NOT NULL`);
 
+    // ── Shareholders: cap-table-linked holder ─────────────────────────────────
+    // Lets a shareholder row represent another tracked company (e.g. the parent
+    // holding equity in a subsidiary) instead of an outside individual/entity,
+    // so companies.ownershipPercent can be derived from the real cap table.
+    await db.execute(sql`ALTER TABLE shareholders ADD COLUMN IF NOT EXISTS holder_company_id INTEGER`);
+
     logger.info("Startup migrations applied (schema)");
   } catch (e) {
     // Log but never crash the server — missing tables are better discovered

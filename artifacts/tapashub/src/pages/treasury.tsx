@@ -9,7 +9,6 @@
  *   • Full entry management (add / edit / reverse)
  */
 import * as React from "react"
-import * as XLSX from "xlsx"
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
@@ -25,7 +24,6 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Separator } from "@/components/ui/separator"
 import { Progress } from "@/components/ui/progress"
 import {
@@ -38,6 +36,8 @@ import { adminApi } from "@/lib/admin-api"
 import { useToast } from "@/hooks/use-toast"
 import { useAuth } from "@/contexts/auth-context"
 import { RequestAccessGate } from "@/components/access-gate"
+import { ResponsiveTable, type ResponsiveTableColumn, type ResponsiveTableAction } from "@/components/responsive-table"
+import { QueryState } from "@/components/query-state"
 
 /* ─────────────────────────────── Types ─────────────────────────────── */
 
@@ -127,9 +127,9 @@ const SOURCE_COLORS = [
 ]
 
 const STATUS_STYLES: Record<string, string> = {
-  approved: "bg-green-500/10 text-green-400 border-green-500/20",
-  pending:  "bg-amber-500/10 text-amber-400 border-amber-500/20",
-  rejected: "bg-red-500/10  text-red-400  border-red-500/20",
+  approved: "bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20",
+  pending:  "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20",
+  rejected: "bg-red-500/10  text-red-700 dark:text-red-400  border-red-500/20",
 }
 
 const inr = (n: number) => `₹${Math.round(n).toLocaleString("en-IN")}`
@@ -244,7 +244,7 @@ export default function Treasury() {
   })
 
   const listKey = ["/api/treasury/entries", page, statusFilter, sourceFilter]
-  const { data: list, isLoading: listLoading, isError: listError } = useQuery<EntryList>({
+  const { data: list, isLoading: listLoading, isError: listError, refetch: refetchList } = useQuery<EntryList>({
     queryKey: listKey,
     queryFn: () => adminApi.get(
       `/treasury/entries?page=${page}&limit=25${statusFilter !== "all" ? `&status=${statusFilter}` : ""}${sourceFilter !== "all" ? `&fundingSource=${sourceFilter}` : ""}`
@@ -326,6 +326,8 @@ export default function Treasury() {
   /* Excel export */
   async function handleExport() {
     try {
+      // Loaded on demand — keeps the ~95 kB gzipped xlsx bundle out of the initial page load.
+      const XLSX = await import("xlsx")
       const data = await adminApi.get("/treasury/entries?limit=10000")
       const rows = (data.items as TreasuryEntry[]).map(e => ({
         "Date":            e.date,
@@ -358,6 +360,96 @@ export default function Treasury() {
   const f = (k: keyof EntryForm, v: string) => setForm(frm => ({ ...frm, [k]: v }))
   const totalPages = Math.ceil((list?.total ?? 0) / 25)
 
+  const entryColumns: ResponsiveTableColumn<TreasuryEntry>[] = [
+    { key: "date", header: "Date", card: "hidden", cell: (e) => <span className="text-xs text-muted-foreground whitespace-nowrap">{e.date}</span> },
+    {
+      key: "source", header: "Source", card: "subtitle",
+      cell: (e) => (
+        <div className="flex items-center gap-1.5">
+          <Building2 className="w-3 h-3 text-muted-foreground shrink-0" />
+          <span className="text-xs font-medium">{sourceLabel(e.fundingSource)}</span>
+        </div>
+      ),
+      cardCell: (e) => <>{sourceLabel(e.fundingSource)} · {e.date}</>,
+    },
+    { key: "investorName", header: "Investor / Lender", cell: (e) => <span className="text-sm text-muted-foreground">{e.investorName ?? "—"}</span> },
+    {
+      key: "description", header: "Description", card: "title",
+      cell: (e) => (
+        <div>
+          <div className="text-sm font-medium max-w-[220px] truncate">{e.description}</div>
+          {e.isReversed && <div className="text-[11px] text-red-700 dark:text-red-400/80 mt-0.5">Reversed · {e.reversalReason}</div>}
+        </div>
+      ),
+      cardCell: (e) => e.description,
+    },
+    {
+      key: "amount", header: "Amount",
+      cell: (e) => e.isReversed ? (
+        <span className="font-semibold line-through text-muted-foreground whitespace-nowrap">{inr(e.amount)}</span>
+      ) : (
+        <HoverCard openDelay={200}>
+          <HoverCardTrigger asChild>
+            <button type="button" className="font-semibold text-green-700 dark:text-green-400 underline decoration-dotted decoration-green-400/40 focus:outline-none focus-visible:ring-1 focus-visible:ring-green-400 rounded whitespace-nowrap">{inr(e.amount)}</button>
+          </HoverCardTrigger>
+          <HoverCardContent align="start" className="w-64 text-sm">
+            <div className="space-y-2">
+              <div className="font-semibold">{sourceLabel(e.fundingSource)}</div>
+              <div className="text-xs text-muted-foreground space-y-1.5">
+                <div className="flex justify-between"><span>Date</span><span className="font-mono">{e.date}</span></div>
+                {e.investorName && <div className="flex justify-between"><span>Source</span><span>{e.investorName}</span></div>}
+                {e.paymentMethod && <div className="flex justify-between"><span>Method</span><span className="capitalize">{e.paymentMethod.replace(/_/g, " ")}</span></div>}
+                {e.referenceNumber && <div className="flex justify-between"><span>Ref #</span><span className="font-mono text-[11px]">{e.referenceNumber}</span></div>}
+                <div className="flex justify-between"><span>Recorded by</span><span>{e.createdByName}</span></div>
+                <div className="flex justify-between"><span>Status</span><span className="capitalize">{e.status}</span></div>
+              </div>
+              <div className="pt-1.5 border-t flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">Amount</span>
+                <span className="font-bold text-green-700 dark:text-green-400">{inr(e.amount)}</span>
+              </div>
+              {(() => {
+                  const ir = getInterestRate(e.notes)
+                  const { cleanNotes } = parseInterestFromNotes(e.notes)
+                  return (
+                    <>
+                      {ir != null && (
+                        <div className="pt-1.5 border-t space-y-1">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-muted-foreground">Interest Rate</span>
+                            <span className="text-xs font-semibold text-amber-700 dark:text-amber-400">{ir}% p.a.</span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-muted-foreground">Annual Interest Expense</span>
+                            <span className="text-xs font-bold text-amber-700 dark:text-amber-400">{inr(e.amount * ir / 100)}</span>
+                          </div>
+                          <div className="text-[10px] text-amber-700 dark:text-amber-400/70">TapasHub repays this as an expense</div>
+                        </div>
+                      )}
+                      {cleanNotes && (
+                        <div className="text-[11px] text-muted-foreground border-t pt-1.5 line-clamp-2">{cleanNotes}</div>
+                      )}
+                    </>
+                  )
+              })()}
+            </div>
+          </HoverCardContent>
+        </HoverCard>
+      ),
+    },
+    {
+      key: "status", header: "Status", card: "badge",
+      cell: (e) => e.isReversed
+        ? <Badge variant="outline" className="bg-muted text-muted-foreground border-border text-[11px]">Reversed</Badge>
+        : <Badge variant="outline" className={`${STATUS_STYLES[e.status] ?? ""} text-[11px]`}>{e.status}</Badge>,
+    },
+    { key: "referenceNumber", header: "Ref #", cell: (e) => <span className="text-xs text-muted-foreground font-mono">{e.referenceNumber ?? "—"}</span> },
+  ]
+
+  const entryActions: ResponsiveTableAction<TreasuryEntry>[] = canManage ? [
+    { label: "Edit entry", icon: Pencil, onClick: openEdit, hidden: (e) => e.isReversed },
+    { label: "Reverse entry", icon: RotateCcw, onClick: openReverse, hidden: (e) => e.isReversed },
+  ] : []
+
   /* ─────────── Access guard ────────── */
   if (!canView) {
     return <RequestAccessGate module="Treasury" />
@@ -366,7 +458,7 @@ export default function Treasury() {
   if (summaryError) {
     return (
       <div className="flex flex-col items-center justify-center h-64 gap-3 text-center">
-        <AlertCircle className="w-10 h-10 text-red-400" />
+        <AlertCircle className="w-10 h-10 text-red-700 dark:text-red-400" />
         <h2 className="text-lg font-semibold">Failed to load Treasury</h2>
         <p className="text-sm text-muted-foreground max-w-xs">
           Could not fetch treasury data. Please refresh the page or contact support.
@@ -388,7 +480,7 @@ export default function Treasury() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <Landmark className="w-5 h-5 text-indigo-400" />
+            <Landmark className="w-5 h-5 text-indigo-700 dark:text-indigo-400" />
             <h1 className="text-2xl font-bold tracking-tight">TapasHub Treasury</h1>
           </div>
           <p className="text-sm text-muted-foreground">
@@ -412,30 +504,30 @@ export default function Treasury() {
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <KpiCard label="Capital Raised" value={summaryLoading ? "…" : inr(summary?.totalRaised ?? 0)}
           sub="Investor & grant funding"
-          icon={Landmark} color="text-green-400" bg="bg-green-500/10" loading={summaryLoading} />
+          icon={Landmark} color="text-green-700 dark:text-green-400" bg="bg-green-500/10" loading={summaryLoading} />
         <KpiCard
           label="Deployed to Sub-brands"
           value={summaryLoading ? "…" : inr(summary?.allocated ?? 0)}
           sub="Capital moved via Fund Allocations"
-          icon={ArrowRight} color="text-indigo-400" bg="bg-indigo-500/10" loading={summaryLoading} />
+          icon={ArrowRight} color="text-indigo-700 dark:text-indigo-400" bg="bg-indigo-500/10" loading={summaryLoading} />
         <KpiCard
           label="Treasury Available"
           value={summaryLoading ? "…" : inr(summary?.available ?? 0)}
           sub="Raised − deployed (unallocated)"
           icon={Wallet}
-          color={!summaryLoading && (summary?.available ?? 0) < 0 ? "text-red-400" : "text-blue-400"}
+          color={!summaryLoading && (summary?.available ?? 0) < 0 ? "text-red-700 dark:text-red-400" : "text-blue-700 dark:text-blue-400"}
           bg={!summaryLoading && (summary?.available ?? 0) < 0 ? "bg-red-500/10" : "bg-blue-500/10"}
           loading={summaryLoading} />
         <KpiCard
           label="Group Revenue"
           value={summaryLoading ? "…" : inr(summary?.groupRevenue ?? 0)}
           sub="Sales & income across all sub-brands"
-          icon={TrendingUp} color="text-emerald-400" bg="bg-emerald-500/10" loading={summaryLoading} />
+          icon={TrendingUp} color="text-emerald-700 dark:text-emerald-400" bg="bg-emerald-500/10" loading={summaryLoading} />
         <KpiCard
           label="Total Expenses"
           value={summaryLoading ? "…" : inr(summary?.totalExpenses ?? 0)}
           sub="Spend across all sub-brands"
-          icon={CheckCircle2} color="text-amber-400" bg="bg-amber-500/10" loading={summaryLoading} />
+          icon={CheckCircle2} color="text-amber-700 dark:text-amber-400" bg="bg-amber-500/10" loading={summaryLoading} />
       </div>
 
       {/* Capital deployment bar — allocated vs capital raised */}
@@ -447,7 +539,7 @@ export default function Treasury() {
                 <span className="text-sm font-medium">Capital Deployment Rate</span>
                 <span className="ml-2 text-xs text-muted-foreground">(deployed to sub-brands vs total raised)</span>
               </div>
-              <span className={`text-sm font-bold ${utilPct > 90 ? "text-red-400" : utilPct > 70 ? "text-amber-400" : "text-green-400"}`}>
+              <span className={`text-sm font-bold ${utilPct > 90 ? "text-red-700 dark:text-red-400" : utilPct > 70 ? "text-amber-700 dark:text-amber-400" : "text-green-700 dark:text-green-400"}`}>
                 {utilPct}%
               </span>
             </div>
@@ -455,9 +547,9 @@ export default function Treasury() {
             <div className="flex justify-between text-xs text-muted-foreground mt-2">
               <span className="flex items-center gap-3">
                 <span>{inr(summary.totalRaised)} raised</span>
-                <span className="text-indigo-400">{inr(summary.allocated)} deployed</span>
+                <span className="text-indigo-700 dark:text-indigo-400">{inr(summary.allocated)} deployed</span>
               </span>
-              <span className="text-blue-400">{inr(summary.available)} available</span>
+              <span className="text-blue-700 dark:text-blue-400">{inr(summary.available)} available</span>
             </div>
           </CardContent>
         </Card>
@@ -564,11 +656,11 @@ export default function Treasury() {
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-lg bg-emerald-500/15 flex items-center justify-center shrink-0">
-                <TrendingUp className="w-4 h-4 text-emerald-400" />
+                <TrendingUp className="w-4 h-4 text-emerald-700 dark:text-emerald-400" />
               </div>
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <CardTitle className="text-sm text-emerald-400">Group Revenue from Operations</CardTitle>
+                  <CardTitle className="text-sm text-emerald-700 dark:text-emerald-400">Group Revenue from Operations</CardTitle>
                   <span className="inline-flex items-center rounded-full border border-emerald-500/30 px-2 py-0.5 text-[10px] font-medium text-emerald-500">
                     Separate from capital
                   </span>
@@ -582,7 +674,7 @@ export default function Treasury() {
               <Skeleton className="h-8 w-24" />
             ) : (
               <div className="text-right">
-                <div className="text-xl font-bold text-emerald-400">{inr(summary?.groupRevenue ?? 0)}</div>
+                <div className="text-xl font-bold text-emerald-700 dark:text-emerald-400">{inr(summary?.groupRevenue ?? 0)}</div>
                 <div className="text-[11px] text-muted-foreground">Total group revenue</div>
               </div>
             )}
@@ -597,14 +689,14 @@ export default function Treasury() {
                   {(summary!.revenueBySubsidiary).map(co => (
                     <div key={co.companyId} className="flex items-center gap-2 p-2.5 rounded-lg bg-white/4 border border-emerald-500/10">
                       <div
-                        className="w-7 h-7 rounded text-white text-[9px] flex items-center justify-center font-bold shrink-0"
+                        className="w-9 h-9 md:w-7 md:h-7 rounded text-white text-[9px] flex items-center justify-center font-bold shrink-0"
                         style={{ background: co.color }}
                       >
                         {co.companyName.substring(0, 2).toUpperCase()}
                       </div>
                       <div className="min-w-0">
                         <div className="text-[11px] font-medium truncate">{co.companyName}</div>
-                        <div className="text-[11px] text-emerald-400 font-semibold">{inr(co.income)}</div>
+                        <div className="text-[11px] text-emerald-700 dark:text-emerald-400 font-semibold">{inr(co.income)}</div>
                       </div>
                     </div>
                   ))}
@@ -680,129 +772,25 @@ export default function Treasury() {
           </div>
         </CardHeader>
         <CardContent className="pt-0">
-          <div className="overflow-x-auto rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Source</TableHead>
-                  <TableHead>Investor / Lender</TableHead>
-                  <TableHead>Description</TableHead>
-                  <TableHead>Amount</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Ref #</TableHead>
-                  {canManage && <TableHead className="w-20" />}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {listLoading ? (
-                  Array.from({ length: 6 }).map((_, i) => (
-                    <TableRow key={i}><TableCell colSpan={canManage ? 8 : 7}><Skeleton className="h-7 w-full" /></TableCell></TableRow>
-                  ))
-                ) : !list?.items?.length ? (
-                  <TableRow>
-                    <TableCell colSpan={canManage ? 8 : 7} className="h-32 text-center text-muted-foreground">
-                      <Landmark className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                      No treasury entries yet. Add your first funding source.
-                    </TableCell>
-                  </TableRow>
-                ) : list.items.map(e => (
-                  <TableRow key={e.id} className={`hover:bg-muted/30 ${e.isReversed ? "opacity-50" : ""}`}>
-                    <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{e.date}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1.5">
-                        <Building2 className="w-3 h-3 text-muted-foreground shrink-0" />
-                        <span className="text-xs font-medium">{sourceLabel(e.fundingSource)}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{e.investorName ?? "—"}</TableCell>
-                    <TableCell>
-                      <div className="text-sm font-medium max-w-[220px] truncate">{e.description}</div>
-                      {e.isReversed && (
-                        <div className="text-[11px] text-red-400/80 mt-0.5">
-                          Reversed · {e.reversalReason}
-                        </div>
-                      )}
-                    </TableCell>
-                    <TableCell className="font-semibold text-green-400 whitespace-nowrap">
-                      {e.isReversed ? (
-                        <span className="line-through text-muted-foreground">{inr(e.amount)}</span>
-                      ) : (
-                        <HoverCard openDelay={200}>
-                          <HoverCardTrigger asChild>
-                            <button type="button" className="font-semibold text-green-400 underline decoration-dotted decoration-green-400/40 focus:outline-none focus-visible:ring-1 focus-visible:ring-green-400 rounded">{inr(e.amount)}</button>
-                          </HoverCardTrigger>
-                          <HoverCardContent align="start" className="w-64 text-sm">
-                            <div className="space-y-2">
-                              <div className="font-semibold">{sourceLabel(e.fundingSource)}</div>
-                              <div className="text-xs text-muted-foreground space-y-1.5">
-                                <div className="flex justify-between"><span>Date</span><span className="font-mono">{e.date}</span></div>
-                                {e.investorName && <div className="flex justify-between"><span>Source</span><span>{e.investorName}</span></div>}
-                                {e.paymentMethod && <div className="flex justify-between"><span>Method</span><span className="capitalize">{e.paymentMethod.replace(/_/g, " ")}</span></div>}
-                                {e.referenceNumber && <div className="flex justify-between"><span>Ref #</span><span className="font-mono text-[11px]">{e.referenceNumber}</span></div>}
-                                <div className="flex justify-between"><span>Recorded by</span><span>{e.createdByName}</span></div>
-                                <div className="flex justify-between"><span>Status</span><span className="capitalize">{e.status}</span></div>
-                              </div>
-                              <div className="pt-1.5 border-t flex items-center justify-between">
-                                <span className="text-xs text-muted-foreground">Amount</span>
-                                <span className="font-bold text-green-400">{inr(e.amount)}</span>
-                              </div>
-                              {(() => {
-                                  const ir = getInterestRate(e.notes)
-                                  const { cleanNotes } = parseInterestFromNotes(e.notes)
-                                  return (
-                                    <>
-                                      {ir != null && (
-                                        <div className="pt-1.5 border-t space-y-1">
-                                          <div className="flex items-center justify-between">
-                                            <span className="text-xs text-muted-foreground">Interest Rate</span>
-                                            <span className="text-xs font-semibold text-amber-400">{ir}% p.a.</span>
-                                          </div>
-                                          <div className="flex items-center justify-between">
-                                            <span className="text-xs text-muted-foreground">Annual Interest Expense</span>
-                                            <span className="text-xs font-bold text-amber-400">{inr(e.amount * ir / 100)}</span>
-                                          </div>
-                                          <div className="text-[10px] text-amber-400/70">TapasHub repays this as an expense</div>
-                                        </div>
-                                      )}
-                                      {cleanNotes && (
-                                        <div className="text-[11px] text-muted-foreground border-t pt-1.5 line-clamp-2">{cleanNotes}</div>
-                                      )}
-                                    </>
-                                  )
-                              })()}
-                            </div>
-                          </HoverCardContent>
-                        </HoverCard>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {e.isReversed
-                        ? <Badge variant="outline" className="bg-muted text-muted-foreground border-border text-[11px]">Reversed</Badge>
-                        : <Badge variant="outline" className={`${STATUS_STYLES[e.status] ?? ""} text-[11px]`}>{e.status}</Badge>
-                      }
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground font-mono">{e.referenceNumber ?? "—"}</TableCell>
-                    {canManage && (
-                      <TableCell>
-                        {!e.isReversed && (
-                          <div className="flex gap-1">
-                            <Button size="icon" variant="ghost" className="w-7 h-7" title="Edit entry" onClick={() => openEdit(e)}>
-                              <Pencil className="w-3.5 h-3.5" />
-                            </Button>
-                            <Button size="icon" variant="ghost" className="w-7 h-7 text-amber-400 hover:text-amber-300"
-                              title="Reverse entry" onClick={() => openReverse(e)}>
-                              <RotateCcw className="w-3.5 h-3.5" />
-                            </Button>
-                          </div>
-                        )}
-                      </TableCell>
-                    )}
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+          <QueryState
+            isLoading={listLoading}
+            isError={listError}
+            isEmpty={!list?.items?.length}
+            onRetry={refetchList}
+            errorMessage="Could not load treasury entries."
+            emptyMessage="No treasury entries yet."
+            emptyHint="Add your first funding source."
+            emptyIcon={Landmark}
+            loading={<ResponsiveTable columns={entryColumns} data={[]} rowKey={(e) => e.id} isLoading skeletonCount={6} actions={entryActions} />}
+          >
+            <ResponsiveTable
+              columns={entryColumns}
+              data={list?.items ?? []}
+              rowKey={(e) => e.id}
+              actions={entryActions}
+              rowClassName={(e) => (e.isReversed ? "opacity-50" : undefined)}
+            />
+          </QueryState>
 
           {/* Pagination */}
           {totalPages > 1 && (
@@ -896,7 +884,7 @@ export default function Treasury() {
             {/* Bank loan: annual interest rate */}
             {form.fundingSource === "bank_loan" && (
               <div className="col-span-2 rounded-lg border border-amber-500/25 bg-amber-500/5 p-3 space-y-2">
-                <div className="text-xs font-semibold text-amber-400 uppercase tracking-wide">Loan Interest Details</div>
+                <div className="text-xs font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wide">Loan Interest Details</div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label className="text-xs">Annual Interest Rate (% p.a.)</Label>
@@ -914,8 +902,8 @@ export default function Treasury() {
                   <div className="flex flex-col justify-end pb-0.5">
                     {form.interestRate && Number(form.amount) > 0 && Number(form.interestRate) > 0 && (
                       <div className="rounded bg-amber-500/10 border border-amber-500/20 px-3 py-2 text-sm">
-                        <div className="text-[10px] text-amber-400/80 uppercase tracking-wide mb-0.5">Annual interest expense</div>
-                        <div className="font-bold text-amber-400">
+                        <div className="text-[10px] text-amber-700 dark:text-amber-400/80 uppercase tracking-wide mb-0.5">Annual interest expense</div>
+                        <div className="font-bold text-amber-700 dark:text-amber-400">
                           {inr(Number(form.amount) * Number(form.interestRate) / 100)}
                         </div>
                         <div className="text-[10px] text-muted-foreground mt-0.5">
@@ -960,7 +948,7 @@ export default function Treasury() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <AlertCircle className="w-5 h-5 text-amber-400" />
+              <AlertCircle className="w-5 h-5 text-amber-700 dark:text-amber-400" />
               Reverse Treasury Entry
             </DialogTitle>
             <DialogDescription>

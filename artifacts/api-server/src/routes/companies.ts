@@ -3,8 +3,10 @@ import { db } from "@workspace/db";
 import {
   companiesTable, insertCompanySchema,
   employeesTable, ordersTable, transactionsTable,
+  customersTable, shareholdersTable, invoicesTable, documentsTable,
+  shipmentsTable, campaignsTable,
 } from "@workspace/db";
-import { eq, sql } from "drizzle-orm";
+import { eq, and, isNotNull, sql } from "drizzle-orm";
 import { requireSuperAdmin } from "../middleware/authz";
 import { companyScope, canAccessCompany } from "../lib/company-scope";
 import { writeAudit } from "../lib/audit";
@@ -84,7 +86,25 @@ router.get("/companies/:companyId", async (req, res) => {
     const id = parseInt(String(req.params.companyId));
     const [c] = await db.select().from(companiesTable).where(eq(companiesTable.id, id));
     if (!c || !canAccessCompany(req, id)) { res.status(404).json({ error: "Not found" }); return; }
-    res.json(formatCompany(c));
+
+    // Live-computed, same as the list endpoint — the stored columns are never
+    // updated after creation and would otherwise silently go stale here.
+    const [empRow, revRow] = await Promise.all([
+      db.select({ count: sql<number>`count(*)::int` }).from(employeesTable)
+        .where(and(eq(employeesTable.companyId, id), eq(employeesTable.status, "active"))),
+      db.execute(sql`
+        SELECT coalesce(sum(amount), 0)::numeric AS total_revenue
+        FROM (
+          SELECT total_amount AS amount FROM orders WHERE company_id = ${id}
+          UNION ALL
+          SELECT amount FROM transactions WHERE company_id = ${id} AND type = 'income'
+        ) src
+      `),
+    ]);
+    const employeeCount = Number(empRow[0]?.count ?? 0);
+    const totalRevenue = Number((revRow.rows[0] as { total_revenue: string } | undefined)?.total_revenue ?? 0);
+
+    res.json(formatCompany(c, employeeCount, totalRevenue));
   } catch (e) {
     req.log.error(e);
     res.status(500).json({ error: "Failed to get company" });
@@ -111,6 +131,33 @@ router.patch("/companies/:companyId", requireSuperAdmin, async (req, res) => {
       res.status(400).json({ error: "No updatable fields provided" });
       return;
     }
+
+    if ("ownershipPercent" in updates) {
+      const v = Number(updates.ownershipPercent);
+      if (!Number.isFinite(v) || v < 0 || v > 100) {
+        res.status(400).json({ error: "ownershipPercent must be a number between 0 and 100" });
+        return;
+      }
+      updates.ownershipPercent = v;
+
+      // When a shareholder row in this company's own cap table represents the
+      // parent's stake, that number is derived automatically (see
+      // recomputeOwnership in routes/shareholders.ts) — a direct edit here
+      // would silently be overwritten on the next share change, so reject it
+      // up front with a clear pointer to the real place to change it.
+      const [linkedHolder] = await db
+        .select({ id: shareholdersTable.id })
+        .from(shareholdersTable)
+        .where(and(eq(shareholdersTable.companyId, id), isNotNull(shareholdersTable.holderCompanyId)))
+        .limit(1);
+      if (linkedHolder) {
+        res.status(400).json({
+          error: "Ownership for this company is derived from its shareholder cap table — edit the linked holder there instead of setting it directly.",
+        });
+        return;
+      }
+    }
+
     const [c] = await db
       .update(companiesTable)
       .set({ ...updates, updatedAt: new Date() })
@@ -124,9 +171,47 @@ router.patch("/companies/:companyId", requireSuperAdmin, async (req, res) => {
   }
 });
 
+// Tables holding records tenant-scoped to a company. Deleting a company while
+// any of these still reference it would silently orphan them — there are no
+// foreign-key constraints in this schema to catch it at the DB level, so it's
+// enforced here instead.
+const DEPENDENT_TABLES: [string, any][] = [
+  ["employees", employeesTable],
+  ["customers", customersTable],
+  ["transactions", transactionsTable],
+  ["orders", ordersTable],
+  ["shareholders", shareholdersTable],
+  ["invoices", invoicesTable],
+  ["documents", documentsTable],
+  ["shipments", shipmentsTable],
+  ["campaigns", campaignsTable],
+];
+
+async function dependentRecordCounts(companyId: number): Promise<Record<string, number>> {
+  const counts = await Promise.all(
+    DEPENDENT_TABLES.map(async ([name, table]) => {
+      const [row] = await db.select({ count: sql<number>`count(*)::int` }).from(table).where(eq(table.companyId, companyId));
+      return [name, Number(row?.count ?? 0)] as const;
+    })
+  );
+  return Object.fromEntries(counts);
+}
+
 router.delete("/companies/:companyId", requireSuperAdmin, async (req, res) => {
   try {
     const id = parseInt(String(req.params.companyId));
+
+    const dependents = await dependentRecordCounts(id);
+    const blocking = Object.fromEntries(Object.entries(dependents).filter(([, count]) => count > 0));
+    if (Object.keys(blocking).length > 0) {
+      res.status(409).json({
+        error: "This company still has records attached and can't be deleted.",
+        details: blocking,
+        hint: "Archive it instead, or remove/reassign its employees, transactions, customers and other records first.",
+      });
+      return;
+    }
+
     const [c] = await db.delete(companiesTable).where(eq(companiesTable.id, id)).returning();
     if (!c) { res.status(404).json({ error: "Not found" }); return; }
     res.status(204).end();

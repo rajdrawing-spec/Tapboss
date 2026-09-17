@@ -1,8 +1,9 @@
-import { pgTable, serial, text, boolean, integer, timestamp } from "drizzle-orm/pg-core";
+import { serial, text, boolean, integer, timestamp } from "drizzle-orm/pg-core";
+import { tbosSchema } from "./_pg-schema";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
-export const notificationsTable = pgTable("notifications", {
+export const notificationsTable = tbosSchema.table("notifications", {
   id: serial("id").primaryKey(),
   type: text("type").notNull(), // order|payment|inventory|gst|compliance|hr|marketing|approval|system
   title: text("title").notNull(),

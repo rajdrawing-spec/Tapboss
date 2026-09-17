@@ -1,8 +1,9 @@
-import { pgTable, serial, text, real, integer, timestamp, index } from "drizzle-orm/pg-core";
+import { serial, text, real, integer, timestamp, index } from "drizzle-orm/pg-core";
+import { tbosSchema } from "./_pg-schema";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
-export const activityTable = pgTable("activity", {
+export const activityTable = tbosSchema.table("activity", {
   id: serial("id").primaryKey(),
   type: text("type").notNull(), // order|payment|lead|employee|inventory|approval|customer
   title: text("title").notNull(),

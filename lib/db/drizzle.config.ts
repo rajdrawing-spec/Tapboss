@@ -11,6 +11,11 @@ const schemaPath = path.join(__dirname, "./src/schema/index.ts");
 export default defineConfig({
   schema: schemaPath,
   dialect: "postgresql",
+  // This Supabase project's "public" schema belongs to an unrelated site.
+  // Restricting drizzle-kit to the "tbos" schema means `push` can only ever
+  // introspect/diff/drop objects there — it will never see, and can never be
+  // offered to drop, the other site's tables.
+  schemaFilter: ["tbos"],
   // dbCredentials is only needed for push/migrate; generate works without it.
   ...(url ? { dbCredentials: { url } } : {}),
 });

@@ -23,10 +23,27 @@ const router = Router();
 async function recomputeOwnership(tx: any, companyId: number): Promise<void> {
   const holders = await tx.select().from(shareholdersTable).where(eq(shareholdersTable.companyId, companyId));
   const totalShares = holders.reduce((s: number, h: any) => s + (h.shares ?? 0), 0);
+  let parentHolder: any = null;
+  let parentStakePercent = 0;
   for (const h of holders) {
     const pct = totalShares > 0 ? (h.shares / totalShares) * 100 : 0;
     if (Math.abs((h.ownershipPercent ?? 0) - pct) > 0.0001) {
       await tx.update(shareholdersTable).set({ ownershipPercent: pct, updatedAt: new Date() }).where(eq(shareholdersTable.id, h.id));
+    }
+    if (h.holderCompanyId != null) {
+      parentHolder = h;
+      parentStakePercent = pct;
+    }
+  }
+
+  // If a holder row represents the parent company's own stake, keep
+  // companies.ownershipPercent in sync — director.ts derives the parent's
+  // share of this subsidiary's profit from that single field, so it must
+  // never drift from the real cap table.
+  if (parentHolder) {
+    const [holderCo] = await tx.select({ type: companiesTable.type }).from(companiesTable).where(eq(companiesTable.id, parentHolder.holderCompanyId));
+    if (holderCo?.type === "parent") {
+      await tx.update(companiesTable).set({ ownershipPercent: parentStakePercent, updatedAt: new Date() }).where(eq(companiesTable.id, companyId));
     }
   }
 }
@@ -57,6 +74,30 @@ function validateHolder(b: Record<string, unknown>, partial: boolean): string | 
   if (b.role !== undefined && !HOLDER_ROLES.includes(String(b.role))) return "Invalid role";
   if (b.status !== undefined && !HOLDER_STATUS.includes(String(b.status))) return "Invalid status";
   if (!partial && !String(b.name ?? "").trim()) return "Name is required";
+  return null;
+}
+
+/**
+ * Resolves `body.holderCompanyId` when a holder represents another tracked
+ * company: validates it, blocks a company holding shares in itself, and
+ * overwrites name/type from the linked company so display can't drift from
+ * the real company record. Mutates `body` in place. Returns an error string
+ * on failure, or null on success (including when no link was requested).
+ */
+async function resolveHolderCompanyLink(body: Record<string, unknown>, ownerCompanyId: number | null): Promise<string | null> {
+  if (!("holderCompanyId" in body)) return null;
+  if (body.holderCompanyId === null || body.holderCompanyId === "" || body.holderCompanyId === undefined) {
+    body.holderCompanyId = null;
+    return null;
+  }
+  const holderCompanyId = Number(body.holderCompanyId);
+  if (!Number.isInteger(holderCompanyId) || holderCompanyId <= 0) return "holderCompanyId must be a valid company id";
+  if (ownerCompanyId != null && holderCompanyId === ownerCompanyId) return "A company cannot hold shares in itself";
+  const [holderCo] = await db.select().from(companiesTable).where(eq(companiesTable.id, holderCompanyId));
+  if (!holderCo) return "Linked company not found";
+  body.holderCompanyId = holderCompanyId;
+  body.name = holderCo.name;
+  body.type = "entity";
   return null;
 }
 
@@ -161,6 +202,7 @@ router.get("/shareholders/cap-table", requirePermission("shareholders.view"), as
         investmentAmount: h.investmentAmount,
         // Equity value = the holder's slice of the current company valuation.
         equityValue: totalShares > 0 ? (h.shares / totalShares) * valuation : 0,
+        holderCompanyId: h.holderCompanyId,
         status: h.status,
       })),
     });
@@ -208,9 +250,13 @@ router.get("/shareholders/:id", requirePermission("shareholders.view"), async (r
 // POST /shareholders — add a holder.
 router.post("/shareholders", requirePermission("shareholders.manage"), async (req, res) => {
   try {
-    const parsed = insertShareholderSchema.safeParse(req.body);
+    const body = { ...(req.body ?? {}) } as Record<string, unknown>;
+    const linkErr = await resolveHolderCompanyLink(body, Number(body.companyId) || null);
+    if (linkErr) { res.status(400).json({ error: linkErr }); return; }
+
+    const parsed = insertShareholderSchema.safeParse(body);
     if (!parsed.success) { res.status(400).json({ error: "Invalid input" }); return; }
-    const vErr = validateHolder(req.body ?? {}, false);
+    const vErr = validateHolder(body, false);
     if (vErr) { res.status(400).json({ error: vErr }); return; }
     if (!canAccessCompany(req, parsed.data.companyId)) { res.status(403).json({ error: "Forbidden" }); return; }
 
@@ -238,7 +284,7 @@ router.post("/shareholders", requirePermission("shareholders.manage"), async (re
   }
 });
 
-const UPDATABLE = ["name", "email", "type", "role", "shares", "sharePrice", "investmentAmount", "status", "joinedDate", "notes"] as const;
+const UPDATABLE = ["name", "email", "type", "role", "shares", "sharePrice", "investmentAmount", "status", "joinedDate", "notes", "holderCompanyId"] as const;
 
 // PATCH /shareholders/:id — edit a holder; recomputes ownership if shares change.
 router.patch("/shareholders/:id", requirePermission("shareholders.manage"), async (req, res) => {
@@ -248,7 +294,9 @@ router.patch("/shareholders/:id", requirePermission("shareholders.manage"), asyn
     if (!existing) { res.status(404).json({ error: "Not found" }); return; }
     if (!canAccessCompany(req, existing.companyId)) { res.status(403).json({ error: "Forbidden" }); return; }
 
-    const body = (req.body ?? {}) as Record<string, unknown>;
+    const body = { ...(req.body ?? {}) } as Record<string, unknown>;
+    const linkErr = await resolveHolderCompanyLink(body, existing.companyId);
+    if (linkErr) { res.status(400).json({ error: linkErr }); return; }
     const vErr = validateHolder(body, true);
     if (vErr) { res.status(400).json({ error: vErr }); return; }
     const updates: Record<string, unknown> = {};
@@ -441,6 +489,7 @@ function formatShareholder(h: typeof shareholdersTable.$inferSelect, names: Reco
     sharePrice: h.sharePrice,
     investmentAmount: h.investmentAmount,
     ownershipPercent: h.ownershipPercent,
+    holderCompanyId: h.holderCompanyId,
     status: h.status,
     joinedDate: h.joinedDate,
     notes: h.notes,

@@ -152,8 +152,15 @@ describe("company scoping — in-page selector views", () => {
   it("Shareholders renders only the selected company's holders and rescopes on switch", async () => {
     renderPage(Shareholders)
 
+    // Shareholders' cap table renders through ResponsiveTable, which puts a
+    // real <table> for desktop and a stacked-card layout for mobile in the
+    // DOM simultaneously (CSS toggles which is visible) — so a matching
+    // holder's name appears twice. Presence assertions use
+    // getAllByText(...).length > 0 rather than getByText, which requires
+    // exactly one match.
+
     // Defaults to the first company (Acme).
-    await waitFor(() => expect(screen.getByText("Acme Holder")).toBeInTheDocument())
+    await waitFor(() => expect(screen.getAllByText("Acme Holder").length).toBeGreaterThan(0))
     expect(screen.queryByText("Brava Holder")).not.toBeInTheDocument()
 
     let urls = scopedUrls("/api/shareholders")
@@ -162,7 +169,7 @@ describe("company scoping — in-page selector views", () => {
 
     // Switch the in-page company selector to Brava.
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "2" } })
-    await waitFor(() => expect(screen.getByText("Brava Holder")).toBeInTheDocument())
+    await waitFor(() => expect(screen.getAllByText("Brava Holder").length).toBeGreaterThan(0))
     expect(screen.queryByText("Acme Holder")).not.toBeInTheDocument()
 
     urls = scopedUrls("/api/shareholders")
@@ -190,11 +197,16 @@ describe("company scoping — in-page selector views", () => {
   it("Fund Allocations renders only the allocations the scoped API returns", async () => {
     renderPage(FundAllocations)
 
-    await waitFor(() => expect(screen.getByText("Working capital")).toBeInTheDocument())
+    // FundAllocations renders through ResponsiveTable, which puts a real
+    // <table> for desktop and a stacked-card layout for mobile in the DOM
+    // simultaneously (CSS toggles which is visible) — so matching text
+    // appears twice. Presence assertions use getAllByText(...).length > 0
+    // rather than getByText, which requires exactly one match.
+    await waitFor(() => expect(screen.getAllByText("Working capital").length).toBeGreaterThan(0))
     // The group ledger shows exactly the server-scoped transfer (Acme → Brava)
     // and never an allocation the API did not return.
     expect(screen.getAllByText("Acme Foods").length).toBeGreaterThan(0)
-    expect(screen.getByText("Brava Textiles")).toBeInTheDocument()
+    expect(screen.getAllByText("Brava Textiles").length).toBeGreaterThan(0)
     expect(screen.queryByText("Cygnus Labs")).not.toBeInTheDocument()
   })
 

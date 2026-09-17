@@ -1,11 +1,12 @@
-import { pgTable, serial, integer, text, timestamp, jsonb, boolean, date } from "drizzle-orm/pg-core";
+import { serial, integer, text, timestamp, jsonb, boolean, date } from "drizzle-orm/pg-core";
+import { tbosSchema } from "./_pg-schema";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
 // ── task_templates: reusable task patterns by department / role ───────────────
 // AI customizes these rather than inventing tasks from scratch. The templates
 // are owned by a company and scoped to a department and optional role key.
-export const taskTemplatesTable = pgTable("task_templates", {
+export const taskTemplatesTable = tbosSchema.table("task_templates", {
   id: serial("id").primaryKey(),
   companyId: integer("company_id").notNull(),
   department: text("department").notNull().default("*"),
@@ -26,7 +27,7 @@ export type NewTaskTemplate = typeof taskTemplatesTable.$inferInsert;
 // ── generated_tasks: daily AI/customized task cache ──────────────────────────
 // One logical row per employee per generation date. Acts as the daily cache so
 // AI is never called more than once per day unless explicitly requested.
-export const generatedTasksTable = pgTable("generated_tasks", {
+export const generatedTasksTable = tbosSchema.table("generated_tasks", {
   id: serial("id").primaryKey(),
   companyId: integer("company_id").notNull(),
   clientVendorId: integer("client_vendor_id"), // optional link to client_vendors
@@ -53,7 +54,7 @@ export type NewGeneratedTask = typeof generatedTasksTable.$inferInsert;
 // ── task_generation_jobs: idempotency guard for daily runs ───────────────────
 // Prevents duplicate generation and lets managers poll the status of a run.
 // Tracks provider, cost, and execution metadata for audit and cost control.
-export const taskGenerationJobsTable = pgTable("task_generation_jobs", {
+export const taskGenerationJobsTable = tbosSchema.table("task_generation_jobs", {
   id: serial("id").primaryKey(),
   companyId: integer("company_id").notNull(),
   runDate: date("run_date", { mode: "string" }).notNull(),

@@ -11,6 +11,7 @@ import { EmptyState, NoData } from "@/components/empty-state"
 import { ArrowLeft, FileText, Brain, Sparkles, TrendingUp, TrendingDown, Activity, RefreshCw } from "lucide-react"
 import { LazyImage } from "@/components/lazy-image"
 import { cn } from "@/lib/utils"
+import { useToast } from "@/hooks/use-toast"
 
 interface AiValuation {
   id: number; companyId: number; provider: string
@@ -25,6 +26,7 @@ export default function CompanyDetail() {
   const params = useParams()
   const companyId = params.id ? parseInt(params.id) : 0
   const qc = useQueryClient()
+  const { toast } = useToast()
 
   const { data: company, isLoading: loadingCompany } = useGetCompany(companyId, {
     query: { enabled: !!companyId, queryKey: getGetCompanyQueryKey(companyId) }
@@ -44,6 +46,7 @@ export default function CompanyDetail() {
   const runVal = useMutation({
     mutationFn: () => adminApi.post(`/ai/valuation/${companyId}`, {}),
     onSuccess: () => qc.invalidateQueries({ queryKey: valKey }),
+    onError: (e: Error) => toast({ title: "Couldn't run valuation", description: e.message, variant: "destructive" }),
   })
 
   const val = runVal.data ?? valuation
@@ -63,8 +66,8 @@ export default function CompanyDetail() {
   }
 
   const healthColor = val?.healthTrend === "growing"
-    ? "text-green-400" : val?.healthTrend === "declining"
-    ? "text-red-400" : "text-amber-400"
+    ? "text-green-700 dark:text-green-400" : val?.healthTrend === "declining"
+    ? "text-red-700 dark:text-red-400" : "text-amber-700 dark:text-amber-400"
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -181,12 +184,12 @@ export default function CompanyDetail() {
                   <>
                     <div>
                       <div className="text-xs text-muted-foreground">Estimated Value</div>
-                      <div className="text-xl font-bold text-green-400">{inr(val.estimatedValue)}</div>
+                      <div className="text-xl font-bold text-green-700 dark:text-green-400">{inr(val.estimatedValue)}</div>
                     </div>
                     <div className="grid grid-cols-2 gap-2 text-xs">
                       <div>
                         <div className="text-muted-foreground">Growth Score</div>
-                        <div className={cn("font-semibold", val.growthScore != null && val.growthScore >= 70 ? "text-green-400" : val.growthScore != null && val.growthScore >= 40 ? "text-amber-400" : "text-red-400")}>
+                        <div className={cn("font-semibold", val.growthScore != null && val.growthScore >= 70 ? "text-green-700 dark:text-green-400" : val.growthScore != null && val.growthScore >= 40 ? "text-amber-700 dark:text-amber-400" : "text-red-700 dark:text-red-400")}>
                           {val.growthScore != null ? `${val.growthScore}/100` : "—"}
                         </div>
                       </div>
@@ -199,7 +202,7 @@ export default function CompanyDetail() {
                       </div>
                       <div>
                         <div className="text-muted-foreground">Rev. Growth</div>
-                        <div className={cn("font-semibold", val.revenueGrowthRate != null && val.revenueGrowthRate >= 0 ? "text-green-400" : "text-red-400")}>
+                        <div className={cn("font-semibold", val.revenueGrowthRate != null && val.revenueGrowthRate >= 0 ? "text-green-700 dark:text-green-400" : "text-red-700 dark:text-red-400")}>
                           {val.revenueGrowthRate != null ? `${val.revenueGrowthRate > 0 ? "+" : ""}${val.revenueGrowthRate.toFixed(1)}%` : "—"}
                         </div>
                       </div>

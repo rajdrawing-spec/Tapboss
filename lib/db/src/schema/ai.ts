@@ -1,7 +1,8 @@
-import { pgTable, serial, integer, text, timestamp, jsonb, real } from "drizzle-orm/pg-core";
+import { serial, integer, text, timestamp, jsonb, real } from "drizzle-orm/pg-core";
+import { tbosSchema } from "./_pg-schema";
 
 // ── ai_config: stores the active AI provider selection + encrypted API keys ──
-export const aiConfigTable = pgTable("ai_config", {
+export const aiConfigTable = tbosSchema.table("ai_config", {
   id:           serial("id").primaryKey(),
   key:          text("key").notNull().unique(),   // e.g. "active_provider", "groq_key"
   value:        text("value"),                    // plaintext for non-sensitive; AES-256-GCM hex for credential keys
@@ -10,7 +11,7 @@ export const aiConfigTable = pgTable("ai_config", {
 });
 
 // ── ai_analyses: cached SWOT + insights results per company ──────────────────
-export const aiAnalysesTable = pgTable("ai_analyses", {
+export const aiAnalysesTable = tbosSchema.table("ai_analyses", {
   id:           serial("id").primaryKey(),
   companyId:    integer("company_id").notNull(),
   provider:     text("provider").notNull(),
@@ -53,7 +54,7 @@ export type MarketRecommendation = {
 };
 
 // ── ai_valuations: cached AI-estimated company valuation per company ──────────
-export const aiValuationsTable = pgTable("ai_valuations", {
+export const aiValuationsTable = tbosSchema.table("ai_valuations", {
   id:                  serial("id").primaryKey(),
   companyId:           integer("company_id").notNull(),
   provider:            text("provider").notNull(),
@@ -86,7 +87,7 @@ export const aiValuationsTable = pgTable("ai_valuations", {
 });
 
 // ── ai_predictions: 3/6/12-month metric forecasts ────────────────────────────
-export const aiPredictionsTable = pgTable("ai_predictions", {
+export const aiPredictionsTable = tbosSchema.table("ai_predictions", {
   id:          serial("id").primaryKey(),
   companyId:   integer("company_id").notNull(),
   provider:    text("provider").notNull(),
@@ -95,7 +96,7 @@ export const aiPredictionsTable = pgTable("ai_predictions", {
 });
 
 // ── ai_market_analyses: market demand + competitor intelligence ───────────────
-export const aiMarketAnalysesTable = pgTable("ai_market_analyses", {
+export const aiMarketAnalysesTable = tbosSchema.table("ai_market_analyses", {
   id:                 serial("id").primaryKey(),
   companyId:          integer("company_id").notNull(),
   provider:           text("provider").notNull(),

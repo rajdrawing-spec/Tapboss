@@ -1,4 +1,5 @@
-import { pgTable, serial, text, integer, boolean, timestamp, jsonb, uniqueIndex } from "drizzle-orm/pg-core";
+import { serial, text, integer, boolean, timestamp, jsonb, uniqueIndex } from "drizzle-orm/pg-core";
+import { tbosSchema } from "./_pg-schema";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -7,7 +8,7 @@ import { z } from "zod/v4";
  * here — `secretRefs` holds the *names* of Replit secrets / env vars that carry
  * the actual API keys/tokens, which are read from process.env at runtime.
  */
-export const integrationConnectionsTable = pgTable("integration_connections", {
+export const integrationConnectionsTable = tbosSchema.table("integration_connections", {
   id: serial("id").primaryKey(),
   companyId: integer("company_id").notNull(),
   platformKey: text("platform_key").notNull(), // references the catalog key (e.g. "shopify")
@@ -31,7 +32,7 @@ export const integrationConnectionsTable = pgTable("integration_connections", {
 }));
 
 /** One row per sync attempt (manual or scheduled) — the audit trail. */
-export const integrationSyncHistoryTable = pgTable("integration_sync_history", {
+export const integrationSyncHistoryTable = tbosSchema.table("integration_sync_history", {
   id: serial("id").primaryKey(),
   connectionId: integer("connection_id").notNull(),
   companyId: integer("company_id").notNull(),
@@ -45,7 +46,7 @@ export const integrationSyncHistoryTable = pgTable("integration_sync_history", {
 });
 
 /** Connection-level errors (auth failures, health-check failures, sync errors). */
-export const integrationErrorLogsTable = pgTable("integration_error_logs", {
+export const integrationErrorLogsTable = tbosSchema.table("integration_error_logs", {
   id: serial("id").primaryKey(),
   connectionId: integer("connection_id").notNull(),
   companyId: integer("company_id").notNull(),

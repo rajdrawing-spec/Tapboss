@@ -1,8 +1,9 @@
-import { pgTable, serial, text, timestamp, integer } from "drizzle-orm/pg-core";
+import { serial, text, timestamp, integer } from "drizzle-orm/pg-core";
+import { tbosSchema } from "./_pg-schema";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
-export const conversations = pgTable("conversations", {
+export const conversations = tbosSchema.table("conversations", {
   id: serial("id").primaryKey(),
   title: text("title").notNull(),
   /** Local user ID of the conversation owner — conversations are private per user. */
