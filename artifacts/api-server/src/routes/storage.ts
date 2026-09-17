@@ -4,14 +4,45 @@ import {
   RequestUploadUrlResponse,
 } from '@workspace/api-zod';
 import { Router, raw, type IRouter, type Request, type Response } from 'express';
+import { db, documentsTable, productImagesTable, productMediaUploadsTable, productsTable } from '@workspace/db';
+import { eq } from 'drizzle-orm';
 
 import {
   ObjectNotFoundError,
   ObjectStorageService,
 } from '../lib/objectStorage';
+import { canAccessCompany } from '../lib/company-scope';
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
+
+/**
+ * Resolves which company (if any) a private object belongs to, by checking
+ * the tables known to reference `/objects/...` paths with a companyId. Only
+ * covers documents and product images today — chat attachments and
+ * marketing-project creatives aren't tracked here yet, so those objects fall
+ * through as unassociated (see the null case below).
+ *
+ * Returns null when no owning record is found — most commonly a legacy or
+ * global (company-less) row — in which case the caller does not restrict
+ * access, matching the route's previous unconditional-serve behavior for
+ * anything outside the categories this function knows about.
+ */
+async function resolveObjectCompanyId(objectPath: string): Promise<number | null> {
+  const [doc] = await db.select({ companyId: documentsTable.companyId }).from(documentsTable).where(eq(documentsTable.fileUrl, objectPath)).limit(1);
+  if (doc?.companyId != null) return doc.companyId;
+
+  const [upload] = await db.select({ companyId: productMediaUploadsTable.companyId }).from(productMediaUploadsTable).where(eq(productMediaUploadsTable.objectPath, objectPath)).limit(1);
+  if (upload) return upload.companyId;
+
+  const [image] = await db.select({ companyId: productImagesTable.companyId }).from(productImagesTable).where(eq(productImagesTable.objectPath, objectPath)).limit(1);
+  if (image) return image.companyId;
+
+  const [legacyProduct] = await db.select({ companyId: productsTable.companyId }).from(productsTable).where(eq(productsTable.imageUrl, objectPath)).limit(1);
+  if (legacyProduct) return legacyProduct.companyId;
+
+  return null;
+}
 
 /**
  * POST /storage/uploads/request-url
@@ -133,23 +164,20 @@ router.get('/storage/objects/*path', async (req: Request, res: Response) => {
     const raw = req.params.path;
     const wildcardPath = Array.isArray(raw) ? raw.join('/') : raw;
     const objectPath = `/objects/${wildcardPath}`;
+
+    // Global requireAuth already runs before this router is mounted, so the
+    // caller is a signed-in user — but that's not enough on its own: without
+    // this check, any authenticated user who obtained another company's
+    // object path (a leaked link, a shared screenshot) could fetch it
+    // directly, bypassing that company's scope entirely.
+    const ownerCompanyId = await resolveObjectCompanyId(objectPath);
+    if (ownerCompanyId != null && !canAccessCompany(req, ownerCompanyId)) {
+      res.status(403).json({ error: 'Forbidden' });
+      return;
+    }
+
     const objectFile =
       await objectStorageService.getObjectEntityFile(objectPath);
-
-    // --- Protected route example (uncomment when using replit-auth) ---
-    // if (!req.isAuthenticated()) {
-    //   res.status(401).json({ error: "Unauthorized" });
-    //   return;
-    // }
-    // const canAccess = await objectStorageService.canAccessObjectEntity({
-    //   userId: req.user.id,
-    //   objectFile,
-    //   requestedPermission: ObjectPermission.READ,
-    // });
-    // if (!canAccess) {
-    //   res.status(403).json({ error: "Forbidden" });
-    //   return;
-    // }
 
     const response = await objectStorageService.downloadObject(objectFile);
 
