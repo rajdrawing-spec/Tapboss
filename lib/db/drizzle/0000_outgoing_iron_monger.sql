@@ -108,6 +108,69 @@ CREATE TABLE "orders" (
 	CONSTRAINT "orders_order_number_unique" UNIQUE("order_number")
 );
 --> statement-breakpoint
+CREATE TABLE "product_ai_metadata" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"product_id" integer NOT NULL,
+	"company_id" integer NOT NULL,
+	"seo_title" text,
+	"seo_description" text,
+	"keywords" jsonb DEFAULT '[]'::jsonb,
+	"seo_tags" jsonb DEFAULT '[]'::jsonb,
+	"attributes" jsonb DEFAULT '{}'::jsonb,
+	"health_score" integer DEFAULT 0,
+	"ai_analysis" jsonb DEFAULT '{}'::jsonb,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "product_ai_metadata_product_id_unique" UNIQUE("product_id")
+);
+--> statement-breakpoint
+CREATE TABLE "product_images" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"product_id" integer NOT NULL,
+	"company_id" integer NOT NULL,
+	"object_path" text NOT NULL,
+	"is_primary" boolean DEFAULT false NOT NULL,
+	"alt_text" text,
+	"ai_tags" jsonb DEFAULT '[]'::jsonb,
+	"created_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "product_import_jobs" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"company_id" integer NOT NULL,
+	"status" text DEFAULT 'pending' NOT NULL,
+	"file_path" text NOT NULL,
+	"stats" jsonb DEFAULT '{"total":0,"success":0,"failed":0,"errors":[]}'::jsonb,
+	"error" text,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "product_marketplace_templates" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"company_id" integer NOT NULL,
+	"marketplace" text NOT NULL,
+	"category" text NOT NULL,
+	"template" jsonb NOT NULL,
+	"is_active" boolean DEFAULT true NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "product_variants" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"product_id" integer NOT NULL,
+	"company_id" integer NOT NULL,
+	"sku" text NOT NULL,
+	"name" text NOT NULL,
+	"barcode" text,
+	"price" real DEFAULT 0 NOT NULL,
+	"stock_quantity" integer DEFAULT 0 NOT NULL,
+	"attributes" jsonb DEFAULT '{}'::jsonb,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE "products" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"company_id" integer NOT NULL,
@@ -115,13 +178,22 @@ CREATE TABLE "products" (
 	"sku" text NOT NULL,
 	"barcode" text,
 	"category" text NOT NULL,
+	"subcategory" text,
 	"description" text,
+	"short_description" text,
 	"price" real DEFAULT 0 NOT NULL,
+	"mrp" real DEFAULT 0 NOT NULL,
 	"cost_price" real DEFAULT 0 NOT NULL,
+	"gst" real DEFAULT 0 NOT NULL,
+	"brand" text,
+	"weight" text,
+	"dimensions" text,
+	"hsn" text,
 	"stock_quantity" integer DEFAULT 0 NOT NULL,
 	"reorder_level" integer DEFAULT 10 NOT NULL,
 	"warehouse_location" text,
 	"image_url" text,
+	"source_link" text,
 	"status" text DEFAULT 'active' NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL
@@ -184,6 +256,7 @@ CREATE TABLE "shareholders" (
 	"share_price" real DEFAULT 0 NOT NULL,
 	"investment_amount" real DEFAULT 0 NOT NULL,
 	"ownership_percent" real DEFAULT 0 NOT NULL,
+	"holder_company_id" integer,
 	"status" text DEFAULT 'active' NOT NULL,
 	"joined_date" text,
 	"notes" text,
@@ -453,6 +526,8 @@ CREATE TABLE "documents" (
 CREATE TABLE "campaigns" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"company_id" integer NOT NULL,
+	"project_id" integer,
+	"client_visible" boolean DEFAULT false NOT NULL,
 	"name" text NOT NULL,
 	"channel" text DEFAULT 'meta' NOT NULL,
 	"objective" text DEFAULT 'conversions',
@@ -473,6 +548,8 @@ CREATE TABLE "campaigns" (
 CREATE TABLE "campaign_creatives" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"company_id" integer NOT NULL,
+	"project_id" integer,
+	"client_visible" boolean DEFAULT false NOT NULL,
 	"campaign_id" integer,
 	"name" text NOT NULL,
 	"type" text DEFAULT 'image' NOT NULL,
@@ -488,6 +565,8 @@ CREATE TABLE "campaign_creatives" (
 CREATE TABLE "campaign_leads" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"company_id" integer NOT NULL,
+	"project_id" integer,
+	"client_visible" boolean DEFAULT false NOT NULL,
 	"campaign_id" integer,
 	"name" text NOT NULL,
 	"email" text,
@@ -497,6 +576,60 @@ CREATE TABLE "campaign_leads" (
 	"value" real DEFAULT 0 NOT NULL,
 	"notes" text,
 	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "marketing_project_members" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"project_id" integer NOT NULL,
+	"user_id" integer NOT NULL,
+	"member_type" text DEFAULT 'internal' NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "marketing_projects" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"company_id" integer NOT NULL,
+	"name" text NOT NULL,
+	"brand_name" text,
+	"brand_color" text,
+	"logo_url" text,
+	"status" text DEFAULT 'active' NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "client_ai_plans" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"project_id" integer NOT NULL,
+	"status" text DEFAULT 'published' NOT NULL,
+	"provider" text,
+	"insights" json,
+	"plan7" json,
+	"plan30" json,
+	"summary" text,
+	"requested_by_user_id" integer,
+	"reviewed_by_user_id" integer,
+	"review_note" text,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "client_audit_logs" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"project_id" integer NOT NULL,
+	"user_id" integer,
+	"user_email" text,
+	"action" text NOT NULL,
+	"detail" json,
+	"created_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "client_visibility_settings" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"project_id" integer NOT NULL,
+	"settings" json NOT NULL,
+	"updated_by" integer,
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
@@ -730,6 +863,7 @@ CREATE TABLE "chat_channel_members" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"channel_id" integer NOT NULL,
 	"user_id" integer NOT NULL,
+	"is_admin" boolean DEFAULT false NOT NULL,
 	"last_read_at" timestamp,
 	"created_at" timestamp DEFAULT now() NOT NULL
 );
@@ -740,6 +874,9 @@ CREATE TABLE "chat_channels" (
 	"type" text DEFAULT 'team' NOT NULL,
 	"name" text NOT NULL,
 	"department" text,
+	"icon_url" text,
+	"description" text,
+	"is_group" boolean DEFAULT false NOT NULL,
 	"created_by" integer,
 	"is_active" boolean DEFAULT true NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL,
@@ -769,6 +906,220 @@ CREATE TABLE "chat_messages" (
 	"created_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "chat_polls" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"channel_id" integer NOT NULL,
+	"user_id" integer NOT NULL,
+	"question" text NOT NULL,
+	"options" jsonb DEFAULT '[]'::jsonb NOT NULL,
+	"votes" jsonb DEFAULT '{}'::jsonb,
+	"is_multiple" boolean DEFAULT false NOT NULL,
+	"closed" boolean DEFAULT false NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "meeting_notes" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"meeting_id" integer NOT NULL,
+	"user_id" integer NOT NULL,
+	"content" text NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "meeting_templates" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"company_id" integer NOT NULL,
+	"name" text NOT NULL,
+	"title" text NOT NULL,
+	"agenda" text,
+	"duration" integer DEFAULT 30 NOT NULL,
+	"waiting_room" boolean DEFAULT false NOT NULL,
+	"password_required" boolean DEFAULT false NOT NULL,
+	"is_recurring" boolean DEFAULT false NOT NULL,
+	"recurrence" text,
+	"default_participant_ids" jsonb DEFAULT '[]'::jsonb,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "planner_events" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"company_id" integer NOT NULL,
+	"user_id" integer NOT NULL,
+	"type" text NOT NULL,
+	"title" text NOT NULL,
+	"start_date" date NOT NULL,
+	"end_date" date,
+	"all_day" boolean DEFAULT false NOT NULL,
+	"metadata" jsonb DEFAULT '{}'::jsonb,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "user_status" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"user_id" integer NOT NULL,
+	"presence" text DEFAULT 'offline' NOT NULL,
+	"status_message" text,
+	"do_not_disturb" boolean DEFAULT false NOT NULL,
+	"dnd_until" timestamp,
+	"last_seen_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "user_status_user_id_unique" UNIQUE("user_id")
+);
+--> statement-breakpoint
+CREATE TABLE "workload_snapshots" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"company_id" integer NOT NULL,
+	"snapshot_date" date NOT NULL,
+	"data" jsonb NOT NULL,
+	"ai_provider" text,
+	"created_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "ai_meeting_notes" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"company_id" integer NOT NULL,
+	"meeting_db_id" integer NOT NULL,
+	"meeting_room_id" text NOT NULL,
+	"channel_id" integer,
+	"task_id" integer,
+	"title" text NOT NULL,
+	"transcript" text,
+	"summary" text,
+	"notes" text,
+	"action_items" jsonb DEFAULT '[]'::jsonb,
+	"status" text DEFAULT 'processing' NOT NULL,
+	"error" text,
+	"audio_object_path" text,
+	"audio_mime_type" text,
+	"uploaded_by" integer NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "ai_meeting_notes_meeting_db_id_unique" UNIQUE("meeting_db_id")
+);
+--> statement-breakpoint
+CREATE TABLE "meeting_participants" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"meeting_id" integer NOT NULL,
+	"user_id" integer NOT NULL,
+	"status" text DEFAULT 'invited' NOT NULL,
+	"joined_at" timestamp,
+	"left_at" timestamp,
+	"created_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "meeting_settings" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"company_id" integer NOT NULL,
+	"default_provider" text DEFAULT 'livekit' NOT NULL,
+	"jitsi_server_url" text DEFAULT 'https://meet.jit.si' NOT NULL,
+	"default_duration" integer DEFAULT 30 NOT NULL,
+	"waiting_room_enabled" boolean DEFAULT false NOT NULL,
+	"password_required" boolean DEFAULT false NOT NULL,
+	"max_participants" integer DEFAULT 50 NOT NULL,
+	"screen_share_enabled" boolean DEFAULT true NOT NULL,
+	"recording_enabled" boolean DEFAULT false NOT NULL,
+	"lobby_enabled" boolean DEFAULT false NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "meeting_settings_company_id_unique" UNIQUE("company_id")
+);
+--> statement-breakpoint
+CREATE TABLE "meetings" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"company_id" integer NOT NULL,
+	"channel_id" integer,
+	"task_id" integer,
+	"title" text NOT NULL,
+	"agenda" text,
+	"meeting_id" text NOT NULL,
+	"provider" text DEFAULT 'livekit' NOT NULL,
+	"room_url" text NOT NULL,
+	"jwt" text,
+	"password" text,
+	"scheduled_at" timestamp,
+	"duration" integer DEFAULT 30 NOT NULL,
+	"organizer_id" integer NOT NULL,
+	"status" text DEFAULT 'scheduled' NOT NULL,
+	"is_recurring" boolean DEFAULT false NOT NULL,
+	"recurrence" text,
+	"waiting_room" boolean DEFAULT false NOT NULL,
+	"max_participants" integer DEFAULT 50 NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
+	"deleted_at" timestamp,
+	CONSTRAINT "meetings_meeting_id_unique" UNIQUE("meeting_id")
+);
+--> statement-breakpoint
+CREATE TABLE "business_numbers" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"company_id" integer NOT NULL,
+	"department" text NOT NULL,
+	"display_name" text NOT NULL,
+	"phone_number" text NOT NULL,
+	"exotel_sid" text,
+	"exotel_virtual_number" text,
+	"status" text DEFAULT 'active' NOT NULL,
+	"is_default" boolean DEFAULT false NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "call_center_settings" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"company_id" integer NOT NULL,
+	"account_sid" text,
+	"api_key" text,
+	"api_token" text,
+	"webhook_url" text,
+	"caller_id" text,
+	"call_recording" boolean DEFAULT false NOT NULL,
+	"call_queue" boolean DEFAULT false NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "call_center_settings_company_id_unique" UNIQUE("company_id")
+);
+--> statement-breakpoint
+CREATE TABLE "call_contacts" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"company_id" integer NOT NULL,
+	"name" text NOT NULL,
+	"phone" text NOT NULL,
+	"email" text,
+	"department" text,
+	"tags" text[] DEFAULT '{}' NOT NULL,
+	"favorite" boolean DEFAULT false NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "call_logs" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"company_id" integer NOT NULL,
+	"call_id" text NOT NULL,
+	"business_number_id" integer,
+	"contact_id" integer,
+	"user_id" integer,
+	"caller_name" text,
+	"caller_number" text NOT NULL,
+	"direction" text NOT NULL,
+	"status" text NOT NULL,
+	"duration" integer DEFAULT 0 NOT NULL,
+	"recording_url" text,
+	"summary" text,
+	"notes" text,
+	"started_at" timestamp DEFAULT now() NOT NULL,
+	"ended_at" timestamp
+);
+--> statement-breakpoint
+CREATE TABLE "call_number_permissions" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"company_id" integer NOT NULL,
+	"user_id" integer NOT NULL,
+	"business_number_id" integer NOT NULL,
+	"can_make_calls" boolean DEFAULT true NOT NULL,
+	"can_receive_calls" boolean DEFAULT true NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE "conversations" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"title" text NOT NULL,
@@ -784,6 +1135,92 @@ CREATE TABLE "messages" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "invoice_customers" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"company_id" integer NOT NULL,
+	"name" text NOT NULL,
+	"email" text,
+	"phone" text,
+	"gstin" text,
+	"pan" text,
+	"billing_address" text,
+	"shipping_address" text,
+	"state" text,
+	"credit_limit" real DEFAULT 0 NOT NULL,
+	"outstanding" real DEFAULT 0 NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "invoice_items" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"invoice_id" integer NOT NULL,
+	"product_id" integer,
+	"description" text NOT NULL,
+	"hsn_code" text,
+	"quantity" real DEFAULT 1 NOT NULL,
+	"rate" real DEFAULT 0 NOT NULL,
+	"discount_percent" real DEFAULT 0 NOT NULL,
+	"tax_type" text DEFAULT 'gst' NOT NULL,
+	"tax_rate" real DEFAULT 0 NOT NULL,
+	"amount" real DEFAULT 0 NOT NULL,
+	"tax_amount" real DEFAULT 0 NOT NULL,
+	"line_total" real DEFAULT 0 NOT NULL,
+	"sort_order" integer DEFAULT 0 NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "invoice_settings" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"company_id" integer NOT NULL,
+	"prefix" text DEFAULT 'INV' NOT NULL,
+	"next_number" integer DEFAULT 1 NOT NULL,
+	"bank_name" text,
+	"bank_account" text,
+	"bank_ifsc" text,
+	"bank_branch" text,
+	"upi_id" text,
+	"default_payment_terms" text DEFAULT '30',
+	"default_notes" text,
+	"default_terms" text,
+	"signature_url" text,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "invoice_settings_company_id_unique" UNIQUE("company_id")
+);
+--> statement-breakpoint
+CREATE TABLE "invoices" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"company_id" integer NOT NULL,
+	"invoice_number" text NOT NULL,
+	"type" text DEFAULT 'invoice' NOT NULL,
+	"status" text DEFAULT 'draft' NOT NULL,
+	"customer_id" integer,
+	"customer_name" text NOT NULL,
+	"customer_email" text,
+	"customer_phone" text,
+	"customer_gstin" text,
+	"customer_pan" text,
+	"billing_address" text,
+	"shipping_address" text,
+	"place_of_supply" text,
+	"currency" text DEFAULT 'INR' NOT NULL,
+	"subtotal" real DEFAULT 0 NOT NULL,
+	"discount_total" real DEFAULT 0 NOT NULL,
+	"tax_total" real DEFAULT 0 NOT NULL,
+	"total" real DEFAULT 0 NOT NULL,
+	"paid_amount" real DEFAULT 0 NOT NULL,
+	"issue_date" text NOT NULL,
+	"due_date" text,
+	"payment_terms" text,
+	"reference" text,
+	"notes" text,
+	"terms" text,
+	"created_by" integer,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 ALTER TABLE "messages" ADD CONSTRAINT "messages_conversation_id_conversations_id_fk" FOREIGN KEY ("conversation_id") REFERENCES "public"."conversations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "invitations_email_pending_uq" ON "invitations" USING btree ("email") WHERE "invitations"."status" = 'pending';--> statement-breakpoint
 CREATE INDEX "invitations_status_idx" ON "invitations" USING btree ("status");--> statement-breakpoint
@@ -794,6 +1231,17 @@ CREATE INDEX "audit_logs_action_idx" ON "audit_logs" USING btree ("action");--> 
 CREATE INDEX "orders_company_id_idx" ON "orders" USING btree ("company_id");--> statement-breakpoint
 CREATE INDEX "orders_customer_id_idx" ON "orders" USING btree ("customer_id");--> statement-breakpoint
 CREATE INDEX "orders_created_at_idx" ON "orders" USING btree ("created_at");--> statement-breakpoint
+CREATE INDEX "product_ai_metadata_product_id_idx" ON "product_ai_metadata" USING btree ("product_id");--> statement-breakpoint
+CREATE INDEX "product_ai_metadata_company_id_idx" ON "product_ai_metadata" USING btree ("company_id");--> statement-breakpoint
+CREATE INDEX "product_images_product_id_idx" ON "product_images" USING btree ("product_id");--> statement-breakpoint
+CREATE INDEX "product_images_company_id_idx" ON "product_images" USING btree ("company_id");--> statement-breakpoint
+CREATE INDEX "product_import_jobs_company_id_idx" ON "product_import_jobs" USING btree ("company_id");--> statement-breakpoint
+CREATE INDEX "product_import_jobs_status_idx" ON "product_import_jobs" USING btree ("status");--> statement-breakpoint
+CREATE INDEX "product_marketplace_templates_company_id_idx" ON "product_marketplace_templates" USING btree ("company_id");--> statement-breakpoint
+CREATE INDEX "product_marketplace_templates_marketplace_idx" ON "product_marketplace_templates" USING btree ("marketplace");--> statement-breakpoint
+CREATE INDEX "product_variants_product_id_idx" ON "product_variants" USING btree ("product_id");--> statement-breakpoint
+CREATE INDEX "product_variants_company_id_idx" ON "product_variants" USING btree ("company_id");--> statement-breakpoint
+CREATE INDEX "product_variants_sku_idx" ON "product_variants" USING btree ("sku");--> statement-breakpoint
 CREATE INDEX "products_company_id_idx" ON "products" USING btree ("company_id");--> statement-breakpoint
 CREATE INDEX "products_status_idx" ON "products" USING btree ("status");--> statement-breakpoint
 CREATE INDEX "products_sku_idx" ON "products" USING btree ("sku");--> statement-breakpoint
@@ -810,9 +1258,34 @@ CREATE INDEX "activity_timestamp_idx" ON "activity" USING btree ("timestamp");--
 CREATE INDEX "activity_company_timestamp_idx" ON "activity" USING btree ("company_id","timestamp");--> statement-breakpoint
 CREATE UNIQUE INDEX "integration_conn_company_platform_uq" ON "integration_connections" USING btree ("company_id","platform_key");--> statement-breakpoint
 CREATE UNIQUE INDEX "integration_cred_conn_env_uq" ON "integration_credentials" USING btree ("connection_id","env_name");--> statement-breakpoint
-CREATE INDEX "chat_channel_members_channel_user_idx" ON "chat_channel_members" USING btree ("channel_id","user_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "marketing_projects_company_uniq" ON "marketing_projects" USING btree ("company_id");--> statement-breakpoint
+CREATE INDEX "client_ai_plans_project_idx" ON "client_ai_plans" USING btree ("project_id");--> statement-breakpoint
+CREATE INDEX "client_audit_project_idx" ON "client_audit_logs" USING btree ("project_id");--> statement-breakpoint
+CREATE INDEX "client_audit_created_idx" ON "client_audit_logs" USING btree ("created_at");--> statement-breakpoint
+CREATE UNIQUE INDEX "client_visibility_project_uniq" ON "client_visibility_settings" USING btree ("project_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "chat_channel_members_channel_user_idx" ON "chat_channel_members" USING btree ("channel_id","user_id");--> statement-breakpoint
 CREATE INDEX "chat_channels_company_id_idx" ON "chat_channels" USING btree ("company_id");--> statement-breakpoint
 CREATE INDEX "chat_channels_type_idx" ON "chat_channels" USING btree ("type");--> statement-breakpoint
 CREATE INDEX "chat_message_reads_message_user_idx" ON "chat_message_reads" USING btree ("message_id","user_id");--> statement-breakpoint
 CREATE INDEX "chat_messages_channel_id_idx" ON "chat_messages" USING btree ("channel_id");--> statement-breakpoint
-CREATE INDEX "chat_messages_created_at_idx" ON "chat_messages" USING btree ("created_at");
+CREATE INDEX "chat_messages_created_at_idx" ON "chat_messages" USING btree ("created_at");--> statement-breakpoint
+CREATE INDEX "chat_polls_channel_id_idx" ON "chat_polls" USING btree ("channel_id");--> statement-breakpoint
+CREATE INDEX "meeting_notes_meeting_id_idx" ON "meeting_notes" USING btree ("meeting_id");--> statement-breakpoint
+CREATE INDEX "meeting_templates_company_id_idx" ON "meeting_templates" USING btree ("company_id");--> statement-breakpoint
+CREATE INDEX "planner_events_user_id_idx" ON "planner_events" USING btree ("user_id");--> statement-breakpoint
+CREATE INDEX "planner_events_company_id_idx" ON "planner_events" USING btree ("company_id");--> statement-breakpoint
+CREATE INDEX "planner_events_start_date_idx" ON "planner_events" USING btree ("start_date");--> statement-breakpoint
+CREATE INDEX "user_status_user_id_idx" ON "user_status" USING btree ("user_id");--> statement-breakpoint
+CREATE INDEX "workload_snapshots_company_date_idx" ON "workload_snapshots" USING btree ("company_id","snapshot_date");--> statement-breakpoint
+CREATE INDEX "ai_meeting_notes_company_id_idx" ON "ai_meeting_notes" USING btree ("company_id");--> statement-breakpoint
+CREATE INDEX "ai_meeting_notes_channel_id_idx" ON "ai_meeting_notes" USING btree ("channel_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "meeting_participants_meeting_user_uidx" ON "meeting_participants" USING btree ("meeting_id","user_id");--> statement-breakpoint
+CREATE INDEX "meeting_settings_company_id_idx" ON "meeting_settings" USING btree ("company_id");--> statement-breakpoint
+CREATE INDEX "meetings_company_id_idx" ON "meetings" USING btree ("company_id");--> statement-breakpoint
+CREATE INDEX "meetings_status_idx" ON "meetings" USING btree ("status");--> statement-breakpoint
+CREATE INDEX "meetings_scheduled_at_idx" ON "meetings" USING btree ("scheduled_at");--> statement-breakpoint
+CREATE INDEX "business_numbers_company_id_idx" ON "business_numbers" USING btree ("company_id");--> statement-breakpoint
+CREATE INDEX "call_contacts_company_id_idx" ON "call_contacts" USING btree ("company_id");--> statement-breakpoint
+CREATE INDEX "call_logs_company_id_idx" ON "call_logs" USING btree ("company_id");--> statement-breakpoint
+CREATE INDEX "call_logs_call_id_idx" ON "call_logs" USING btree ("call_id");--> statement-breakpoint
+CREATE INDEX "call_number_permissions_company_id_idx" ON "call_number_permissions" USING btree ("company_id");
