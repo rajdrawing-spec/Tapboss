@@ -1064,6 +1064,13 @@ export async function repairOrphanedAllocations(): Promise<void> {
     logger.error({ err: e }, "Failed to add chat_messages channel/created index (non-fatal)");
   }
 
+  // Everything below is wrapped in its own try/catch, matching every other
+  // step in this file: a failure here (e.g. the database being briefly
+  // unreachable) must never reject this function's promise, or it escapes as
+  // an unhandled rejection into the caller's chain in index.ts and gets
+  // logged as a top-level "Startup migrations/seeding failed" fatal instead
+  // of the specific, non-fatal message these blocks are meant to produce.
+  try {
   // ── Invoice & Billing module ──────────────────────────────────────────────
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS invoice_settings (
@@ -1302,4 +1309,7 @@ export async function repairOrphanedAllocations(): Promise<void> {
   `);
 
   logger.info("Legacy customers & vendors migrated into client_vendors");
+  } catch (e) {
+    logger.error({ err: e }, "Invoice/billing & client-vendor migration failed (non-fatal)");
+  }
 }

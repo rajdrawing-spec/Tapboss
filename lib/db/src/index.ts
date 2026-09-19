@@ -17,6 +17,11 @@ export const pool = new Pool({
   connectionString,
   ssl: process.env.DATABASE_SSL === "false" ? undefined : { rejectUnauthorized: false },
   max: Number(process.env.DB_POOL_MAX || (isSupabase ? 5 : 10)),
+  // node-postgres has no connect timeout by default, so an unreachable host
+  // (wrong pooler URL, IPv6-only address the network can't route to, a
+  // firewall silently dropping SYN packets) hangs every request on this pool
+  // for the OS-level TCP timeout (~2 minutes) instead of failing fast.
+  connectionTimeoutMillis: Number(process.env.DB_CONNECT_TIMEOUT_MS || 10_000),
   // All TBOS tables live in the "tbos" Postgres schema (see schema/_pg-schema.ts)
   // rather than "public" — this project's "public" schema belongs to an
   // unrelated site and has same-named tables (orders, products, messages) with
