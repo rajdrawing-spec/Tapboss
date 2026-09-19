@@ -1,6 +1,6 @@
 // Central permission catalog + system role definitions for TAPBOSS.
 
-export const SUPER_ADMIN_EMAIL = "tapashub@gmail.com";
+export const SUPER_ADMIN_EMAIL = "info@tapashub.com";
 
 // Permission catalog. "platform.*" are sensitive admin powers reserved for the
 // Super Admin. The remaining module permissions are assignable to any role.
