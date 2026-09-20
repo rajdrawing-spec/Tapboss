@@ -22,15 +22,10 @@ export const pool = new Pool({
   // firewall silently dropping SYN packets) hangs every request on this pool
   // for the OS-level TCP timeout (~2 minutes) instead of failing fast.
   connectionTimeoutMillis: Number(process.env.DB_CONNECT_TIMEOUT_MS || 10_000),
-  // All TBOS tables live in the "tbos" Postgres schema (see schema/_pg-schema.ts)
-  // rather than "public" — this project's "public" schema belongs to an
-  // unrelated site and has same-named tables (orders, products, messages) with
-  // incompatible columns. Drizzle's own queries are already schema-qualified
-  // via that table object, but raw `sql` fragments elsewhere in this codebase
-  // use bare table names, so every connection must resolve them against "tbos"
-  // only — never falling back to "public" — or a typo could silently read/write
-  // the wrong business's data instead of failing loudly.
-  options: "-c search_path=tbos",
+  // Every TBOS table lives directly in "public" on the production project
+  // (see schema/_pg-schema.ts) — no search_path override needed, Postgres's
+  // default ("$user", public) already resolves both Drizzle's queries and the
+  // bare-name raw `sql` fragments elsewhere in this codebase correctly.
 });
 
 export const db = drizzle(pool, { schema });
