@@ -1,5 +1,5 @@
 import * as React from "react";
-import { SignIn, useClerk } from "@clerk/react";
+import { SignIn, SignUp, useClerk } from "@clerk/react";
 
 /** Shown while Clerk processes the SSO callback (OAuth redirect handling).
  *  Without this, the <SignIn> component renders nothing visible during that
@@ -23,24 +23,45 @@ export default function SignInPage({ basePath }: { basePath: string }) {
   const isSsoCallback = typeof window !== "undefined" &&
     window.location.pathname.includes("/sso-callback");
 
+  // /sign-in and /sign-up both mount this page, but Clerk's routing="path"
+  // mode requires the rendered widget's `path` to match the real URL exactly
+  // — including through the OAuth callback sub-route — or the session
+  // exchange silently fails and the user is left on a blank/stuck screen.
+  // Rendering <SignIn> unconditionally (with path hardcoded to /sign-in) is
+  // what broke sign-up: the widget disagreed with the browser about which
+  // route it was on. Render the matching Clerk widget for whichever route is
+  // actually active instead.
+  const isSignUp = typeof window !== "undefined" &&
+    window.location.pathname.includes("/sign-up");
+
+  const authWidget = isSignUp ? (
+    <SignUp
+      routing="path"
+      path={`${basePath}/sign-up`}
+      signInUrl={`${basePath}/sign-in`}
+    />
+  ) : (
+    <SignIn
+      routing="path"
+      path={`${basePath}/sign-in`}
+      signUpUrl={`${basePath}/sign-up`}
+    />
+  );
+
   return (
     <div className="flex min-h-[100dvh] items-center justify-center bg-background px-4">
       {isSsoCallback ? (
-        // The <SignIn> component still needs to be rendered (it handles the
-        // OAuth exchange internally), but we layer a visible overlay on top so
+        // The widget still needs to be rendered (it handles the OAuth
+        // exchange internally), but we layer a visible overlay on top so
         // the user sees something other than a blank white page.
         <div className="relative w-full">
           {/* Spinner overlay — stays visible while Clerk silently processes the
-              OAuth code. The <SignIn> is rendered (mounted) but visually covered. */}
+              OAuth code. The widget is rendered (mounted) but visually covered. */}
           <div className="absolute inset-0 z-10">
             <SsoCallbackOverlay />
           </div>
           <div className="invisible">
-            <SignIn
-              routing="path"
-              path={`${basePath}/sign-in`}
-              signUpUrl={`${basePath}/sign-up`}
-            />
+            {authWidget}
           </div>
         </div>
       ) : (
@@ -58,11 +79,7 @@ export default function SignInPage({ basePath }: { basePath: string }) {
             <p className="text-base font-semibold text-foreground">Welcome to TapasHub Business OS</p>
             <p className="mt-1 text-sm text-muted-foreground">Connect · Empower · Grow · invite-only access</p>
           </div>
-          <SignIn
-            routing="path"
-            path={`${basePath}/sign-in`}
-            signUpUrl={`${basePath}/sign-up`}
-          />
+          {authWidget}
         </div>
       )}
     </div>
