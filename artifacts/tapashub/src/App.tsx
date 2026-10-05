@@ -24,6 +24,7 @@ import { AiTaskRealtimeProvider } from '@/contexts/ai-task-realtime-context';
 import { MeetingProvider } from '@/contexts/meeting-context';
 import { ClerkQueryClientCacheInvalidator } from '@/components/clerk-cache-invalidator';
 import { RouteErrorBoundary } from '@/components/error-boundary';
+import { MarketingApp } from '@/marketing/MarketingApp';
 
 // Page components are code-split: each becomes its own chunk loaded on demand,
 // so the initial bundle stays small and first paint is fast.
@@ -65,7 +66,6 @@ const MarketingProjects = React.lazy(() => import('@/pages/admin/marketing-proje
 // Lazy-load the sign-in shell so the public landing page does not pay for the
 // entire signed-in app bundle on first paint.
 const SignInPage = React.lazy(() => import('@/pages/sign-in'));
-const HomePage = React.lazy(() => import('@/pages/home'));
 
 // Prefetch the home dashboard chunk during idle time so the most common landing
 // page feels instant when the user navigates to it.
@@ -343,6 +343,12 @@ function AuthedApp() {
 function ClerkProviderWithRoutes() {
   const [, setLocation] = useLocation();
 
+  // index.html's default <title> now serves the marketing site first — set
+  // the app's own title back once the TBOS branch mounts.
+  React.useEffect(() => {
+    document.title = "TapasHub Business OS";
+  }, []);
+
   return (
     <ClerkProvider
       publishableKey={clerkPubKey}
@@ -359,28 +365,6 @@ function ClerkProviderWithRoutes() {
           <Route path="/sign-in/*?" component={SignInRoute} />
           <Route path="/sign-up/*?" component={SignInRoute} />
           <Route path="/login">{() => <Redirect to="/sign-in" />}</Route>
-          {/* Root path is public: signed-out visitors see the marketing
-              homepage instead of being bounced straight to sign-in. Signed-in
-              users still land on their dashboard (AuthedApp maps "/" there). */}
-          <Route path="/">
-            <ClerkLoading>
-              <div className="flex h-[100dvh] w-full flex-col items-center justify-center gap-4 bg-background">
-                <div className="mb-1 text-center">
-                  <span className="text-2xl font-black tracking-tight text-foreground">TAPAS</span>
-                  <span className="text-2xl font-black tracking-tight text-[#1d90e8]">HUB</span>
-                </div>
-                <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
-              </div>
-            </ClerkLoading>
-            <ClerkLoaded>
-              <Show when="signed-out">
-                <React.Suspense fallback={<PageFallback />}>
-                  <HomePage basePath={basePath} />
-                </React.Suspense>
-              </Show>
-              <Show when="signed-in"><AuthedApp /></Show>
-            </ClerkLoaded>
-          </Route>
           <Route>
             {/* While Clerk fetches auth state from the proxy, render a full-screen
                 spinner so the user never sees a blank white page on cold start. */}
@@ -404,7 +388,33 @@ function ClerkProviderWithRoutes() {
   );
 }
 
+// The public corporate site lives at the bare apex domain; the TBOS app
+// itself moved to the tapboss. subdomain. Everything else (localhost during
+// development, any other host) keeps showing the app unchanged, so this
+// split can never accidentally lock out the app in an environment that isn't
+// the production marketing domain.
+function isMarketingHost(hostname: string): boolean {
+  return hostname === "tapashub.com" || hostname === "www.tapashub.com";
+}
+
 function App() {
+  const onMarketingHost = typeof window !== "undefined" && isMarketingHost(window.location.hostname);
+
+  if (onMarketingHost) {
+    // Clerk, the query client and the whole TBOS provider tree are never
+    // mounted here — marketing visitors don't need auth, and skipping it
+    // keeps the public site's bundle small and fast.
+    return (
+      <ThemeProvider defaultTheme="light" storageKey="tapashub-marketing-theme">
+        <TooltipProvider>
+          <WouterRouter base={basePath}>
+            <MarketingApp />
+          </WouterRouter>
+        </TooltipProvider>
+      </ThemeProvider>
+    );
+  }
+
   return (
     <ThemeProvider defaultTheme="dark" storageKey="tbos-theme">
       <QueryClientProvider client={queryClient}>

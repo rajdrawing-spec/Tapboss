@@ -964,6 +964,24 @@ export async function applyMigrations(): Promise<void> {
     // so companies.ownershipPercent can be derived from the real cap table.
     await db.execute(sql`ALTER TABLE shareholders ADD COLUMN IF NOT EXISTS holder_company_id INTEGER`);
 
+    // ── Public enquiry form (tapashub.com corporate site) ──────────────────────
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS enquiries (
+        id          SERIAL PRIMARY KEY,
+        name        TEXT      NOT NULL,
+        email       TEXT      NOT NULL,
+        phone       TEXT,
+        company     TEXT,
+        interest    TEXT,
+        message     TEXT      NOT NULL,
+        budget      TEXT,
+        status      TEXT      NOT NULL DEFAULT 'new',
+        created_at  TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS enquiries_status_idx ON enquiries(status)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS enquiries_created_at_idx ON enquiries(created_at)`);
+
     logger.info("Startup migrations applied (schema)");
   } catch (e) {
     // Log but never crash the server — missing tables are better discovered

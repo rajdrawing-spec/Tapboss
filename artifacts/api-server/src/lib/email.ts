@@ -135,6 +135,38 @@ export function sendExecutiveReportEmail(args: { to: string; subject: string; ht
   return send({ to: args.to, subject: args.subject, html: args.html });
 }
 
+/** Notify the team of a new enquiry from the public tapashub.com contact form. */
+export function sendEnquiryNotificationEmail(args: {
+  to: string;
+  name: string;
+  email: string;
+  phone?: string;
+  company?: string;
+  interest?: string;
+  message: string;
+  budget?: string;
+}): Promise<SendResult> {
+  const row = (label: string, value?: string) =>
+    value ? `<tr><td style="padding:4px 0;color:#9ca3af;width:110px;">${esc(label)}</td><td style="padding:4px 0;color:#f4f4f5;">${esc(value)}</td></tr>` : "";
+  const body = `
+    <tr><td style="padding:0 0 12px;">A new enquiry was submitted on tapashub.com.</td></tr>
+    <tr><td><table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;">
+      ${row("Name", args.name)}
+      ${row("Email", args.email)}
+      ${row("Phone", args.phone)}
+      ${row("Company", args.company)}
+      ${row("Interest", args.interest)}
+      ${row("Budget", args.budget)}
+    </table></td></tr>
+    <tr><td style="padding:16px 0 4px;color:#9ca3af;">Message</td></tr>
+    <tr><td style="padding:4px 0;white-space:pre-wrap;color:#f4f4f5;">${esc(args.message)}</td></tr>`;
+  return send({
+    to: args.to,
+    subject: `New enquiry from ${args.name}`.replace(/[\r\n]+/g, " "),
+    html: layout("New TapasHub Enquiry", body),
+  });
+}
+
 /** Notify a shareholder that they've been added, with a link to the portal. */
 export function sendShareholderInviteEmail(args: {
   to: string;
