@@ -6,14 +6,14 @@
  */
 
 export type BrandCategory =
-  | "Fashion / Commerce"
-  | "Marketing Technology"
+  | "Fashion / Commerce / Affiliate"
+  | "Marketing Technology / AI"
   | "E-commerce"
-  | "Creative"
-  | "Pets / Community"
+  | "Creative / Digital Production"
+  | "Pet Technology / Social"
   | "Automotive / Lifestyle"
-  | "Lifestyle"
-  | "Technology"
+  | "Consumer / Lifestyle"
+  | "Technology / Business"
   | "Games / Entertainment"
   | "Toys / Consumer";
 
@@ -41,7 +41,7 @@ export const BRANDS: Brand[] = [
   {
     slug: "hugfab",
     name: "HUGFAB",
-    category: "Fashion / Commerce",
+    category: "Fashion / Commerce / Affiliate",
     group: "Create",
     description:
       "A fashion discovery and commerce ecosystem connecting shoppers with products, brands and new ways to discover style.",
@@ -51,7 +51,7 @@ export const BRANDS: Brand[] = [
   {
     slug: "targetgum",
     name: "TargetGum",
-    category: "Marketing Technology",
+    category: "Marketing Technology / AI",
     group: "Technology",
     description:
       "An intelligent marketing ecosystem designed to help businesses understand what to do, where to market, who to reach and how to grow.",
@@ -71,7 +71,7 @@ export const BRANDS: Brand[] = [
   {
     slug: "bhilva-studios",
     name: "Bhilva Studios",
-    category: "Creative",
+    category: "Creative / Digital Production",
     group: "Create",
     description:
       "A creative studio focused on visual storytelling, digital experiences and creative production.",
@@ -81,7 +81,7 @@ export const BRANDS: Brand[] = [
   {
     slug: "tikkatails",
     name: "Tikkatails",
-    category: "Pets / Community",
+    category: "Pet Technology / Social",
     group: "Community",
     description:
       "A digital social ecosystem built around pets, communities and the people who love them.",
@@ -101,8 +101,8 @@ export const BRANDS: Brand[] = [
   {
     slug: "taparo",
     name: "Taparo",
-    category: "Lifestyle",
-    group: "Lifestyle",
+    category: "Consumer / Lifestyle",
+    group: "Commerce",
     description:
       "A TapasHub brand exploring modern consumer products and digital experiences.",
     url: "https://taparo.com",
@@ -111,7 +111,7 @@ export const BRANDS: Brand[] = [
   {
     slug: "pepalworks",
     name: "Pepalworks",
-    category: "Technology",
+    category: "Technology / Business",
     group: "Technology",
     description:
       "A technology and business ecosystem focused on creating digital products, services and solutions.",
