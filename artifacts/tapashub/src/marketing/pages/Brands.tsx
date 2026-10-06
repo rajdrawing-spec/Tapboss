@@ -9,7 +9,7 @@ export default function Brands() {
   useSeo({
     title: "Our Brands",
     description:
-      "Brands we've built: HUGFAB, TargetGum, Sanchikart, Bhilva Studios, Tikkatails, Throttle Daires, Taparo, Pepalworks, Undertree Games and Tottotoy.",
+      "Brands we've built: HUGFAB, TargetGum, Sanchikart, Bhilva Studios, Tikkatails, Throttle Daires, Tapayro, Pepalworks, Undertree Games and Tottotoy.",
     path: "/brands",
   });
 

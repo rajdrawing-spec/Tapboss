@@ -14,14 +14,23 @@ export function BrandCard({ brand, size = "md", delay = 0 }: { brand: Brand; siz
     >
       <div>
         <div className="mb-4 flex items-start justify-between">
-          <span
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full text-sm font-black"
-            style={{ backgroundColor: `${brand.accent}1a`, color: brand.accent }}
-          >
-            {brand.name.charAt(0)}
-          </span>
+          {brand.logo ? (
+            <img
+              src={brand.logo}
+              alt={`${brand.name} logo`}
+              loading="lazy"
+              className="h-9 max-w-[55%] object-contain object-left"
+            />
+          ) : (
+            <span
+              className="inline-flex h-10 w-10 items-center justify-center rounded-full text-sm font-black"
+              style={{ backgroundColor: `${brand.accent}1a`, color: brand.accent }}
+            >
+              {brand.name.charAt(0)}
+            </span>
+          )}
           {isLive && (
-            <ArrowUpRight className="h-5 w-5 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-foreground" />
+            <ArrowUpRight className="h-5 w-5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-foreground" />
           )}
         </div>
         <h3 className={size === "lg" ? "text-2xl font-bold text-foreground" : "text-xl font-bold text-foreground"}>

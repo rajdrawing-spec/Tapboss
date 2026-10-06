@@ -35,6 +35,8 @@ export interface Brand {
   url: string | null;
   /** Visual accent for the brand's card and ecosystem node. */
   accent: string;
+  /** Path to the brand's real logo under /public, when one has been supplied. */
+  logo?: string;
 }
 
 export const BRANDS: Brand[] = [
@@ -47,6 +49,7 @@ export const BRANDS: Brand[] = [
       "A fashion discovery and commerce ecosystem connecting shoppers with products, brands and new ways to discover style.",
     url: "https://hugfab.com",
     accent: "#EC4899",
+    logo: "/brands/hugfab.png",
   },
   {
     slug: "targetgum",
@@ -57,6 +60,7 @@ export const BRANDS: Brand[] = [
       "An intelligent marketing ecosystem designed to help businesses understand what to do, where to market, who to reach and how to grow.",
     url: "https://targetgum.com",
     accent: "#2F80FF",
+    logo: "/brands/targetgum.webp",
   },
   {
     slug: "sanchikart",
@@ -67,6 +71,7 @@ export const BRANDS: Brand[] = [
       "A modern commerce platform designed around discovering and selling products through a streamlined digital shopping experience.",
     url: "https://sanchikart.com",
     accent: "#8B5CF6",
+    logo: "/brands/sanchikart.webp",
   },
   {
     slug: "bhilva-studios",
@@ -99,14 +104,15 @@ export const BRANDS: Brand[] = [
     accent: "#EF4444",
   },
   {
-    slug: "taparo",
-    name: "Taparo",
+    slug: "tapayro",
+    name: "Tapayro",
     category: "Consumer / Lifestyle",
     group: "Commerce",
     description:
       "A TapasHub brand exploring modern consumer products and digital experiences.",
-    url: "https://taparo.com",
+    url: "https://tapayro.com",
     accent: "#14B8A6",
+    logo: "/brands/tapayro.avif",
   },
   {
     slug: "pepalworks",
